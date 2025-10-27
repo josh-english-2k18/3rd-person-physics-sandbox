@@ -1,0 +1,5 @@
+{
+  "name": "3rd-Person Physics Sandbox",
+  "description": "A 3D scene showcasing a gray-tiled plane and physically-simulated shapes (a red cone, blue cube, and green sphere) that fall, bounce, and come to rest. Built with React, Three.js, and Rapier physics.",
+  "requestFramePermissions": []
+}
