@@ -1,19 +1,36 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-The React entry point (`index.tsx`) hydrates the canvas defined in `App.tsx`, which wires keyboard controls, pointer-lock UI, and the Three.js scene. Scene elements live in `components/`, with `Scene.tsx` shepherding lighting, physics, and child components, and `Player.tsx` encapsulating character input, animation, and camera logic. Place new GLTF or texture assets under `models/` in self-contained folders that include licensing notes. Build and tooling configuration (`vite.config.ts`, `tsconfig.json`, `package.json`) sit at the repo root alongside the static host file `index.html` and the landing metadata in `metadata.json`.
+A Vite + TypeScript + three.js app with no framework. `index.html` loads `src/main.ts`, which builds the renderer, physics world, level, and props, loads the MotionBricks model and clips, and runs the frame loop. Modules are grouped by concern:
+- `src/motion/`: the MotionBricks SOMA port, covering BVH parsing, skeleton math, the ONNX engine, playback, and the locomotion state machine.
+- `src/character/`: retargeting, IK, and the operator.
+- `src/game/`: input, the camera rig, the player character, and the weapon.
+- `src/world/`: Rapier physics, the level, and props.
+- `src/fx/`, `src/render/`, `src/ui/`: effects, rendering, and UI.
+
+Source GLBs live in `assets-src/models/` with attribution. Generated runtime assets go in `public/models/` and `public/motionbricks/`; both are gitignored and produced by `npm run setup`.
 
 ## Build, Test, and Development Commands
-Use `npm install` once per environment to hydrate dependencies. `npm run dev` starts the Vite dev server (defaults to http://localhost:5173) with hot module reload. `npm run build` produces an optimized production bundle in `dist/`. `npm run preview` serves the built bundle so you can sanity-check minified assets before shipping.
+- `npm install` installs dependencies.
+- `npm run setup` downloads the MotionBricks ONNX model and clips (checksum-verified) and optimizes the character GLB. Run it once per checkout.
+- `npm run dev` starts Vite at http://localhost:5173. The server sends COOP/COEP headers so multithreaded WASM works.
+- `npm run build` typechecks and bundles to `dist/`.
+- `npm run preview` serves the build.
+- `npm test` runs the Vitest integration tests against the real model.
 
 ## Coding Style & Naming Conventions
-Write TypeScript with the default 2-space indentation used throughout the repo. Export React components as named functions in PascalCase (`PlayerController`, `GroundPlane`) and co-locate helper hooks near their consumers. Stick to descriptive file names that mirror the primary export. Keep physics constants, keyboard mappings, and asset URLs in clearly labeled objects near the top of the module so they can be tuned quickly. Favor hooks and functional composition—avoid class components and side effects outside React’s lifecycle.
+TypeScript with strict mode and 2-space indentation. Use classes for stateful systems (`MotionPlayer`, `Props`) and plain functions for math. Keep tuning constants in labeled objects near the top of each module (`RIG`, `AIM`, `MODES`, `LOOK`, `CARBINE`). Name files after their primary export. Coordinates are Y-up meters everywhere. A heading θ faces `(sin θ, 0, cos θ)`.
 
 ## Testing Guidelines
-The project currently relies on manual smoke testing. After each change, run `npm run dev`, load the scene in a Chromium-based browser, and confirm: the pointer-lock prompt appears, WASD movement updates the player and camera, and the physics bodies settle without console warnings. If you introduce deterministic logic, add light unit coverage using your preferred runner (Vitest integrates cleanly with Vite) and store specs under `__tests__/` adjacent to the source.
+Run `npm test` after touching `src/motion/`. For visual or gameplay changes, run `npm run dev` and confirm the following:
+- The splash loads the model (the HUD shows WEBGPU).
+- WASD, sprint, aim-strafe, and crouch all produce smooth motion with holograms ahead of the operator.
+- Shooting crates, barrels, plates, and glass works.
+- The console shows no errors.
+Appending `?test` skips pointer lock and exposes `window.__game` for automated runs.
 
 ## Commit & Pull Request Guidelines
-The existing history starts with an imported baseline; keep commits focused, written in present-tense imperative (`Add player crouch toggle`), and under 72 characters. Describe observable behavior or configuration changes in the body if one line is insufficient. For pull requests, link the relevant issue, note any new dependencies or asset sources, and include before/after screenshots or short clips when UI or motion changes are involved. Call out manual test steps performed so reviewers can reproduce quickly.
+Keep commits focused and write subjects in the present-tense imperative, under 72 characters. Describe observable behavior changes in the body. In PRs, note new dependencies or asset sources and include screenshots or clips for visual or motion changes.
 
 ## Assets & Licensing
-Third-party models (e.g., `models/swat_operator/scene.gltf`) ship with upstream license files—preserve them and add new assets with equivalent attribution. Record any external source details in `metadata.json` so downstream consumers maintain compliance.
+Preserve upstream attribution: the operator is CC-BY-4.0, and the MotionBricks model and clips are under NVIDIA's licenses and are never committed. Record new external assets in `metadata.json` and `assets-src/models/README.md`.

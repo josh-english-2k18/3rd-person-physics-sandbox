@@ -1,5 +1,31 @@
 {
-  "name": "3rd-Person Physics Sandbox",
-  "description": "A 3D scene showcasing a gray-tiled plane and physically-simulated shapes (a red cone, blue cube, and green sphere) that fall, bounce, and come to rest. Built with React, Three.js, and Rapier physics.",
-  "requestFramePermissions": []
+  "name": "MotionBricks Range",
+  "description": "A third-person shooter prototype whose operator is animated live, in the browser, by NVIDIA MotionBricks (SOMA model via onnxruntime-web), with a holographic preview of the generated motion, an Unreal-style grey-box level, and destructible physics props.",
+  "requestFramePermissions": [],
+  "assets": [
+    {
+      "path": "assets-src/models/swat_operator.glb",
+      "title": "S.W.A.T. Operator",
+      "author": "Mateusz Woliński (https://sketchfab.com/jeandiz)",
+      "license": "CC-BY-4.0",
+      "source": "https://sketchfab.com/3d-models/swat-operator-9e82fabf26194896b5ad4a364d864eab",
+      "notes": "Character and its carbine; optimized into public/models/operator.glb by scripts/optimize-models.mjs."
+    },
+    {
+      "path": "public/motionbricks/mmm_v6_soma_fp16.onnx",
+      "title": "MotionBricks SOMA (MotionBricks-SOMA-RP-v1, mixed FP16)",
+      "author": "NVIDIA",
+      "license": "NVIDIA Open Model Agreement",
+      "source": "https://github.com/NVlabs/motionbricks",
+      "notes": "Fetched by `npm run setup`; not committed."
+    },
+    {
+      "path": "public/motionbricks/clips/*.bvh",
+      "title": "MotionBricks SOMA sample clips (Bones RigPlay 1)",
+      "author": "NVIDIA / Bones Studio",
+      "license": "NVIDIA Sample Data Evaluation License",
+      "source": "https://github.com/NVlabs/motionbricks/tree/main/assets/motions",
+      "notes": "Target-pose source for the locomotion blend spaces. Evaluation use only; fetched by `npm run setup`, not committed."
+    }
+  ]
 }
