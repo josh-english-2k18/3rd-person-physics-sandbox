@@ -1,25 +1,36 @@
 {
-  "name": "3rd-person-physics-sandbox",
+  "name": "motionbricks-shooter",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.1.0",
   "type": "module",
   "scripts": {
+    "setup": "node scripts/fetch-motionbricks.mjs && node scripts/optimize-models.mjs",
+    "fetch:motionbricks": "node scripts/fetch-motionbricks.mjs",
+    "optimize:models": "node scripts/optimize-models.mjs",
     "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview"
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "react-dom": "^19.2.0",
-    "react": "^19.2.0",
-    "three": "^0.180.0",
-    "@react-three/fiber": "^9.3.0",
-    "@react-three/rapier": "^2.1.0",
-    "@react-three/drei": "^10.7.6"
+    "@dimforge/rapier3d-compat": "^0.19.3",
+    "n8ao": "^1.10.1",
+    "onnxruntime-web": "1.30.0",
+    "postprocessing": "^6.38.3",
+    "three": "^0.182.0"
   },
   "devDependencies": {
-    "@types/node": "^22.14.0",
-    "@vitejs/plugin-react": "^5.0.0",
-    "typescript": "~5.8.2",
-    "vite": "^6.2.0"
+    "@gltf-transform/core": "^4.3.0",
+    "@gltf-transform/extensions": "^4.3.0",
+    "@gltf-transform/functions": "^4.3.0",
+    "@types/node": "^24.10.1",
+    "@types/three": "^0.182.0",
+    "meshoptimizer": "^1.1.1",
+    "onnxruntime-node": "^1.22.0",
+    "sharp": "^0.34.5",
+    "typescript": "~5.9.3",
+    "vite": "^7.2.4",
+    "vitest": "^4.0.16"
   }
 }
