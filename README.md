@@ -10,7 +10,7 @@ The cyan-to-violet wireframes show what MotionBricks just generated: the operato
 
 ```bash
 npm install
-npm run setup      # downloads the MotionBricks model (~380 MB) + sample clips, optimizes the character
+npm run setup      # downloads the MotionBricks model (~380 MB), sample clips and HDRI sky; optimizes the character
 npm run dev        # http://localhost:5173
 ```
 
@@ -23,7 +23,8 @@ Use a recent Chromium browser for WebGPU. Other browsers fall back to multithrea
 | `LMB` | Fire |
 | `RMB` | Aim; the operator strafes and faces the crosshair |
 | `Shift` | Sprint |
-| `C` | Crouch (directional crouch walk) |
+| `C` | Crouch toggle (combat crouch; walk or aim-walk while crouched) |
+| `Space` | Jump, or vault a low obstacle ahead (0.25–1.05 m) |
 | `R` | Reload |
 | `G` | Toggle the motion preview |
 | `H` | Toggle the HUD |
@@ -36,9 +37,18 @@ The code in `src/motion/` is a TypeScript port of the MotionBricks SOMA runtime.
 
 1. **Engine** (`engine.ts`) encodes four context poses and one to four target poses into the model's tensors. It aligns them by heading, computes root velocities and 6D rotations, and runs the ONNX graph. It then decodes the generated frames and applies endpoint correction, so the motion starts exactly where the character is and ends on the target. It matches the Python reference to within millimetres; see the integration test.
 2. **Player** (`player.ts`) plays generations back and records every displayed pose. The last 0.1 s of that history becomes the next generation's context. Inference is asynchronous, so a new generation starts at the elapsed latency and crossfades in.
-3. **Locomotion** (`locomotion.ts`) follows the Scene Preview runtime. Targets are blended from sample-clip windows in three blend spaces: speed for jog/sprint, direction for aimed strafing, and direction for crouching. Each target is placed about a second ahead along a spring-smoothed desired velocity. A new generation is requested on turns, speed changes, or when the current motion runs out. Standing still is a generated transition into an idle clip, and turning in place is a generated turn.
-4. **Physics** (`src/game/player.ts`) moves a Rapier kinematic capsule along the generated root path. Whatever the world blocks is pushed back into the motion, so the next generation starts from where the operator actually is.
-5. **Retargeting** (`src/character/retarget.ts`) maps the 77-joint SOMA skeleton onto the Mixamo-rigged operator, using a per-bone frame calibration that tolerates different bind poses. An aim layer (`soldier.ts`) then twists the spine toward the crosshair, shoulders the carbine, and uses two-bone IK to keep both hands on it.
+3. **Locomotion** (`locomotion.ts`) follows the Scene Preview runtime. Targets are blended from sample-clip windows in two blend spaces:
+   - a speed space for walking, jogging and sprinting
+   - a direction space for aimed movement, with a walk pose forward
+
+   Each target is placed about a second ahead along a spring-smoothed desired velocity, and each generation spans 8–14 tokens. Shorter spans react sooner but can't fit a whole stride, so the gait shuffles; `gait.test.ts` guards that trade-off. A new generation is requested on turns, speed changes, or when the current motion runs out. Standing still is a generated transition into an idle clip, and turning in place is a generated turn.
+
+   Vaulting and jumping follow MotionBricks' `jump_0_75m` Smart Primitive: three target windows from a no-hands hurdle clip (run-up, apex over the obstacle, run-out), placed on the obstacle the player is running at.
+4. **Physics** (`src/game/player.ts`) moves a Rapier kinematic capsule along the generated root path. Whatever the world blocks is pushed back into the motion, so the next generation starts from where the operator actually is. A light input assist also nudges the capsule toward the requested velocity. That extra displacement is folded back into the motion, so WASD responds immediately while the animation catches up.
+5. **Retargeting** (`src/character/retarget.ts`) maps the 77-joint SOMA skeleton onto the Mixamo-rigged operator, using a per-bone frame calibration that tolerates different bind poses. `soldier.ts` then layers on top of it:
+   - an aim layer that twists the spine toward the crosshair and shoulders the carbine
+   - two-bone IK that keeps both hands on the carbine
+   - a procedural combat crouch: the hips drop, and leg IK keeps the feet where MotionBricks planted them
 
 ## Project layout
 
@@ -53,17 +63,27 @@ src/
   render/            renderer + post stack (N8AO, bloom, ACES, SMAA), grid material
   ui/                splash + HUD
   audio.ts           procedural WebAudio sound effects
-scripts/             fetch-motionbricks.mjs, optimize-models.mjs
+scripts/             fetch-assets.mjs, optimize-models.mjs
 assets-src/models/   source GLB (+ attribution)
-public/              generated: models/, motionbricks/ (gitignored)
+public/              generated: models/, motionbricks/, hdri/ (gitignored)
 ```
+
+## Look
+
+The scene is lit by an HDRI sky (Poly Haven, CC0). Its sun direction, sun colour and horizon fog are all read from the image, and the image also supplies the image-based lighting. Additional touches:
+
+- a fresnel rim light that lifts the operator off the background
+- a mesh muzzle flash, ejected brass and a laser sight
+- noise-shaded fire and smoke
+- shockwave rings and scorch marks
 
 ## Tests
 
-`npm test` runs the MotionBricks port against the real model in Node with onnxruntime-node. It checks inbetweening fidelity against a real clip and steers locomotion along a path. The tests skip if `npm run setup` has not been run.
+`npm test` runs the MotionBricks port against the real model in Node with onnxruntime-node. It checks inbetweening fidelity against a real clip and steers locomotion along a path. It also measures gait quality for every movement mode (footfall order, step evenness and hip bounce) and start, stop and turn responsiveness. The tests skip if `npm run setup` has not been run.
 
 ## Licensing
 
 - Code: MIT, see [`LICENSE`](./LICENSE).
 - MotionBricks models: [NVIDIA Open Model Agreement](https://www.nvidia.com/en-us/agreements/enterprise-software/nvidia-open-model-agreement/). The sample BVH clips are under the NVIDIA Sample Data Evaluation License, for evaluation only. Both are downloaded by `npm run setup` and are not committed.
 - The operator model is "S.W.A.T. Operator" by Mateusz Woliński, CC-BY-4.0. See [`assets-src/models/README.md`](./assets-src/models/README.md) and [`metadata.json`](./metadata.json).
+- The sky is [Kloofendal 48d Partly Cloudy (Pure Sky)](https://polyhaven.com/a/kloofendal_48d_partly_cloudy_puresky) by Greg Zaal, from Poly Haven, CC0. It is downloaded by `npm run setup`.

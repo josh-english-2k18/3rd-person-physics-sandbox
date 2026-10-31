@@ -26,6 +26,14 @@
       "license": "NVIDIA Sample Data Evaluation License",
       "source": "https://github.com/NVlabs/motionbricks/tree/main/assets/motions",
       "notes": "Target-pose source for the locomotion blend spaces. Evaluation use only; fetched by `npm run setup`, not committed."
+    },
+    {
+      "path": "public/hdri/sky_4k.hdr",
+      "title": "Kloofendal 48d Partly Cloudy (Pure Sky)",
+      "author": "Greg Zaal (Poly Haven)",
+      "license": "CC0",
+      "source": "https://polyhaven.com/a/kloofendal_48d_partly_cloudy_puresky",
+      "notes": "Sky, sun and image-based lighting; fetched by `npm run setup`."
     }
   ]
 }
