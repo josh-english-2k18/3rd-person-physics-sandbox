@@ -1,9 +1,10 @@
-// Downloads the MotionBricks SOMA ONNX model and the sample clips the game samples target
-// poses from into public/motionbricks/. These files are large (the model is ~380 MB) and carry
-// their own licenses, so they are fetched on demand instead of being committed.
+// Downloads the runtime assets that are too large (or too separately licensed) to commit:
 //
-// Every file is a Git LFS object in https://github.com/NVlabs/motionbricks. The LFS pointer
-// (from raw.githubusercontent.com) gives the expected SHA-256 and size, which we verify.
+// - public/motionbricks/: the MotionBricks SOMA ONNX model (~380 MB) and the sample clips the
+//   game samples target poses from. Every file is a Git LFS object in
+//   https://github.com/NVlabs/motionbricks; the LFS pointer (from raw.githubusercontent.com)
+//   gives the expected SHA-256 and size, which we verify.
+// - public/hdri/: the sky, a CC0 HDRI from Poly Haven used for lighting and the background.
 
 import { createHash } from 'node:crypto';
 import { createWriteStream, existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
@@ -14,6 +15,15 @@ import { pipeline } from 'node:stream/promises';
 const REPO = 'NVlabs/motionbricks';
 const REF = 'main';
 const OUT_DIR = resolve(import.meta.dirname, '..', 'public', 'motionbricks');
+const HDRI_DIR = resolve(import.meta.dirname, '..', 'public', 'hdri');
+
+/** Direct downloads (no LFS pointer): local path under public/hdri -> URL. */
+const HDRIS = [
+  {
+    dst: 'sky_4k.hdr',
+    url: 'https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/4k/kloofendal_48d_partly_cloudy_puresky_4k.hdr',
+  },
+];
 
 /** Repository path -> local path under public/motionbricks. `lfs: false` files are plain git blobs. */
 const FILES = [
@@ -98,7 +108,19 @@ async function main() {
     await download(media(src), file, size);
     if (sha256(file) !== oid) throw new Error(`Checksum mismatch for ${dst}`);
   }
-  console.log(`MotionBricks assets ready in ${OUT_DIR}`);
+  for (const { dst, url } of HDRIS) {
+    const file = join(HDRI_DIR, dst);
+    mkdirSync(dirname(file), { recursive: true });
+    const size = Number((await fetch(url, { method: 'HEAD' })).headers.get('content-length'));
+    if (existsSync(file) && statSync(file).size === size) {
+      console.log(`  ok  hdri/${dst}`);
+      continue;
+    }
+    console.log(`  get hdri/${dst} (${mb(size)})`);
+    await download(url, file, size);
+    if (statSync(file).size !== size) throw new Error(`Size mismatch for hdri/${dst}`);
+  }
+  console.log('Assets ready in public/motionbricks and public/hdri');
 }
 
 main().catch((error) => {

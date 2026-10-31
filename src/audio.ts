@@ -134,6 +134,16 @@ export class Audio {
     this.tone(t, 0.12, 180, 60, 0.4 * a, 'triangle');
   }
 
+  /** Brass casing hitting the floor. */
+  shell(at: Vector3): void {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    const a = this.attenuation(at) * 0.7;
+    const pitch = 4200 + Math.random() * 1800;
+    this.tone(t, 0.12, pitch, pitch * 0.92, 0.05 * a, 'triangle');
+    this.tone(t + 0.07 + Math.random() * 0.04, 0.08, pitch * 1.1, pitch, 0.025 * a, 'triangle');
+  }
+
   dryFire(): void {
     if (!this.ctx) return;
     this.noiseBurst(this.ctx.currentTime, 0.03, 'highpass', 3000, 2, 0.25);

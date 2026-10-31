@@ -35,6 +35,8 @@ export class Weapon {
   private triggerWasDown = false;
   /** Called when a shot lands on something (for the hit marker). */
   onHit?: (surface: Surface | null) => void;
+  /** Called for every round fired (muzzle flash, brass). */
+  onShot?: (muzzle: Vector3, direction: Vector3) => void;
 
   constructor(
     private readonly physics: Physics,
@@ -116,6 +118,7 @@ export class Weapon {
     this.particles.muzzle(muzzle, shotDir);
     this.fx.flash(muzzle.clone().addScaledVector(shotDir, 0.7), 14, 0.05, '#ffb062', 7);
     this.audio.gunshot();
+    this.onShot?.(muzzle, shotDir);
 
     if (!hit) {
       this.fx.tracer(muzzle, target);

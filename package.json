@@ -4,8 +4,8 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "setup": "node scripts/fetch-motionbricks.mjs && node scripts/optimize-models.mjs",
-    "fetch:motionbricks": "node scripts/fetch-motionbricks.mjs",
+    "setup": "node scripts/fetch-assets.mjs && node scripts/optimize-models.mjs",
+    "fetch:assets": "node scripts/fetch-assets.mjs",
     "optimize:models": "node scripts/optimize-models.mjs",
     "dev": "vite",
     "build": "tsc --noEmit && vite build",

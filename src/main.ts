@@ -5,6 +5,7 @@ import { Soldier } from './character/soldier';
 import { CombatFx } from './fx/combat';
 import { MotionPreview } from './fx/motionPreview';
 import { Particles } from './fx/particles';
+import { LaserSight, MuzzleFlash, ShellCasings } from './fx/weaponFx';
 import { CameraRig } from './game/cameraRig';
 import { Input } from './game/input';
 import { PlayerCharacter } from './game/player';
@@ -23,6 +24,7 @@ const ASSETS = {
   model: `${import.meta.env.BASE_URL}motionbricks/mmm_v6_soma_fp16.onnx`,
   clips: `${import.meta.env.BASE_URL}motionbricks/clips/`,
   operator: `${import.meta.env.BASE_URL}models/operator.glb`,
+  sky: `${import.meta.env.BASE_URL}hdri/sky_4k.hdr`,
 };
 
 const canvas = document.getElementById('game') as HTMLCanvasElement;
@@ -99,7 +101,12 @@ async function main(): Promise<void> {
   let gltf;
   try {
     splash.progress(0.02, 'Loading motion clips…');
-    const assets = Promise.all([loadClips(), new GLTFLoader().loadAsync(ASSETS.operator)]);
+    const assets = Promise.all([
+      loadClips(),
+      new GLTFLoader().loadAsync(ASSETS.operator),
+      renderer.useHdri(ASSETS.sky).catch((e) => console.warn('HDRI sky unavailable; using the procedural sky', e)),
+    ]);
+
     [clips, gltf] = await assets;
     const skeleton = clips.get(TARGET_CLIPS.idle)!.skeleton;
     splash.progress(0.05, 'Downloading MotionBricks SOMA model…');
@@ -127,6 +134,15 @@ async function main(): Promise<void> {
   player.onFootstep = (at, weight) => audio.footstep(at, weight);
   const weapon = new Weapon(physics, props, particles, fx, audio);
   weapon.onHit = (surface) => surface && hud.hit();
+  const muzzleFlash = new MuzzleFlash(soldier.muzzle);
+  const shells = new ShellCasings();
+  const laser = new LaserSight();
+  shells.onLand = (at) => audio.shell(at);
+  renderer.scene.add(shells.mesh, laser.group);
+  weapon.onShot = () => {
+    muzzleFlash.trigger();
+    shells.eject(soldier.port.getWorldPosition(new Vector3()), soldier.weaponRight, soldier.weaponUp, soldier.weaponForward, player.position.y);
+  };
   const preview = new MotionPreview(skeleton);
   renderer.scene.add(preview.group);
   rig.yaw = spawnHeading;
@@ -197,6 +213,13 @@ async function main(): Promise<void> {
     renderer.followShadows(player.position);
     particles.update(dt);
     fx.update(dt);
+    muzzleFlash.update(dt);
+    shells.update(dt);
+    const laserFrom = soldier.laser.getWorldPosition(new Vector3());
+    const laserDir = soldier.weaponForward;
+    const laserHit = physics.world.castRay(new RAPIER.Ray(laserFrom, laserDir), 150, true, undefined, undefined, player.collider);
+    laser.update(dt, active && input.aim, laserFrom, laserFrom.clone().addScaledVector(laserDir, laserHit ? laserHit.timeOfImpact : 150));
+
 
     const generation = motion.lastGeneration;
     if (generation) preview.setGeneration(generation);

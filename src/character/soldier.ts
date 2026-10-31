@@ -11,6 +11,7 @@ import {
 import type { GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import type { Pose, Skeleton } from '../motion/skeleton';
 import { frameQuaternion, rotateWorld, setWorldQuaternion, solveTwoBone, worldQuaternion } from './ik';
+import { addRimLight, setAnisotropy } from '../render/rimLight';
 import { Retargeter } from './retarget';
 
 /**
@@ -29,6 +30,10 @@ const WEAPON = {
   butt: new Vector3(0, -0.02, -0.4),
   muzzle: new Vector3(0, 0.012, 0.41),
   sight: new Vector3(0, 0.11, -0.02),
+  /** Ejection port on the right side (weapon right is -X). */
+  port: new Vector3(-0.03, 0.035, -0.04),
+  /** Front of the laser module on the left of the handguard. */
+  laser: new Vector3(0.026, 0.027, 0.235),
 };
 
 /** Bind-pose props that should follow a bone instead of floating at their bind position. */
@@ -72,6 +77,8 @@ export class Soldier {
   readonly weapon = new Group();
   readonly muzzle = new Object3D();
   readonly sight = new Object3D();
+  readonly port = new Object3D();
+  readonly laser = new Object3D();
   private readonly retargeter: Retargeter;
   private readonly spine: Bone[];
   private readonly head: Bone;
@@ -95,7 +102,9 @@ export class Soldier {
         const material = mesh.material as MeshStandardMaterial;
         // The eyes use transmission, which needs a feedback-prone extra pass; they sit behind goggles anyway.
         if ((material as MeshPhysicalMaterial).isMeshPhysicalMaterial) (material as MeshPhysicalMaterial).transmission = 0;
-        material.envMapIntensity = 1.2;
+        material.envMapIntensity = 1.15;
+        setAnisotropy(material, 8);
+        addRimLight(material);
       }
     });
 
@@ -122,7 +131,9 @@ export class Soldier {
     this.weapon.scale.setScalar(WEAPON.scale);
     this.muzzle.position.copy(WEAPON.muzzle);
     this.sight.position.copy(WEAPON.sight);
-    this.weapon.add(this.muzzle, this.sight);
+    this.port.position.copy(WEAPON.port);
+    this.laser.position.copy(WEAPON.laser);
+    this.weapon.add(this.muzzle, this.sight, this.port, this.laser);
     this.root.add(this.weapon);
 
     const handBind = (side: 'Left' | 'Right'): HandBind => {
@@ -247,6 +258,14 @@ export class Soldier {
 
   get weaponForward(): Vector3 {
     return new Vector3(0, 0, 1).applyQuaternion(this.weaponQ);
+  }
+
+  get weaponUp(): Vector3 {
+    return new Vector3(0, 1, 0).applyQuaternion(this.weaponQ);
+  }
+
+  get weaponRight(): Vector3 {
+    return new Vector3(-1, 0, 0).applyQuaternion(this.weaponQ);
   }
 }
 

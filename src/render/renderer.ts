@@ -15,6 +15,7 @@ import {
   WebGLRenderer,
 } from 'three';
 import { Sky } from 'three/examples/jsm/objects/Sky.js';
+import { loadSky } from './sky';
 import {
   BloomEffect,
   ChromaticAberrationEffect,
@@ -39,9 +40,19 @@ const LOOK = {
   hemisphere: 0.12,
   fog: '#a9b8c8',
   fogDensity: 0.0075,
+  exposure: 1.12,
+  /** Once the HDRI sky is in: */
+  hdri: {
+    background: 1.0,
+    environment: 1.0,
+    sunIntensity: 3.6,
+    hemisphere: 0.05,
+    fogDensity: 0.0055,
+    fogFromHorizon: 0.9,
+  },
   bloom: { intensity: 0.9, threshold: 0.82, smoothing: 0.25, radius: 0.7 },
   shadowSize: 4096,
-  shadowExtent: 28,
+  shadowExtent: 22,
 };
 
 export class Renderer {
@@ -51,6 +62,8 @@ export class Renderer {
   readonly sun: DirectionalLight;
   readonly composer: EffectComposer;
   private readonly sunDirection = new Vector3();
+  private readonly skyMesh: Sky;
+  private readonly hemisphere: HemisphereLight;
   private readonly chromatic: ChromaticAberrationEffect;
   /** 0..1 pulse added to chromatic aberration (explosions, hits). */
   shock = 0;
@@ -61,6 +74,7 @@ export class Renderer {
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.outputColorSpace = SRGBColorSpace;
     this.renderer.toneMapping = NoToneMapping; // tone mapping happens in the post stack
+    this.renderer.toneMappingExposure = LOOK.exposure;
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = PCFSoftShadowMap;
 
@@ -79,6 +93,7 @@ export class Renderer {
     this.sunDirection.setFromSphericalCoords(1, phi, theta);
     u.sunPosition.value.copy(this.sunDirection);
     this.scene.add(sky);
+    this.skyMesh = sky;
 
     const pmrem = new PMREMGenerator(this.renderer);
     const envScene = new Scene();
@@ -104,7 +119,8 @@ export class Renderer {
     this.sun.shadow.normalBias = 0.025;
     this.sun.shadow.radius = 3;
     this.scene.add(this.sun, this.sun.target);
-    this.scene.add(new HemisphereLight('#cfe2ff', '#4d4339', LOOK.hemisphere));
+    this.hemisphere = new HemisphereLight('#cfe2ff', '#4d4339', LOOK.hemisphere);
+    this.scene.add(this.hemisphere);
 
     // Post: AO -> bloom -> tone mapping -> vignette/CA -> SMAA
     this.composer = new EffectComposer(this.renderer, { frameBufferType: HalfFloatType });
@@ -134,6 +150,22 @@ export class Renderer {
     this.composer.addPass(new EffectPass(this.camera, new SMAAEffect({ preset: SMAAPreset.HIGH })));
 
     window.addEventListener('resize', () => this.resize());
+  }
+
+  /** Swaps the procedural placeholder sky for an HDRI, re-deriving the sun and fog from it. */
+  async useHdri(url: string): Promise<void> {
+    const sky = await loadSky(this.renderer, url);
+    this.scene.remove(this.skyMesh);
+    this.scene.background = sky.background;
+    this.scene.backgroundIntensity = LOOK.hdri.background;
+    this.scene.environment?.dispose();
+    this.scene.environment = sky.environment;
+    this.scene.environmentIntensity = LOOK.hdri.environment;
+    this.sunDirection.copy(sky.sunDirection);
+    this.sun.color.copy(sky.sunColor);
+    this.sun.intensity = LOOK.hdri.sunIntensity;
+    this.hemisphere.intensity = LOOK.hdri.hemisphere;
+    this.scene.fog = new FogExp2(sky.horizon.clone().multiplyScalar(LOOK.hdri.fogFromHorizon), LOOK.hdri.fogDensity);
   }
 
   private resize(): void {

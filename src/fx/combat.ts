@@ -3,14 +3,17 @@ import {
   BoxGeometry,
   CanvasTexture,
   Color,
+  DoubleSide,
   DynamicDrawUsage,
   Group,
   InstancedMesh,
+  Mesh,
   Matrix4,
   MeshBasicMaterial,
   MeshStandardMaterial,
   PlaneGeometry,
   PointLight,
+  RingGeometry,
   Quaternion,
   Vector3,
 } from 'three';
@@ -32,6 +35,29 @@ interface Flash {
   life: number;
   age: number;
   intensity: number;
+}
+
+function scorchTexture(): CanvasTexture {
+  const size = 256;
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = size;
+  const g = canvas.getContext('2d')!;
+  const grad = g.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+  grad.addColorStop(0, 'rgba(8,6,5,0.95)');
+  grad.addColorStop(0.45, 'rgba(18,14,12,0.75)');
+  grad.addColorStop(0.8, 'rgba(30,24,20,0.25)');
+  grad.addColorStop(1, 'rgba(0,0,0,0)');
+  g.fillStyle = grad;
+  g.fillRect(0, 0, size, size);
+  for (let i = 0; i < 40; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const r = size * (0.2 + Math.random() * 0.28);
+    g.fillStyle = `rgba(10,8,6,${0.2 + Math.random() * 0.3})`;
+    g.beginPath();
+    g.arc(size / 2 + Math.cos(a) * r, size / 2 + Math.sin(a) * r, 4 + Math.random() * 12, 0, Math.PI * 2);
+    g.fill();
+  }
+  return new CanvasTexture(canvas);
 }
 
 function bulletHoleTexture(): CanvasTexture {
@@ -67,6 +93,9 @@ export class CombatFx {
   private readonly decals: InstancedMesh;
   private decalCursor = 0;
   private readonly flashes: Flash[] = [];
+  private readonly scorches: InstancedMesh;
+  private scorchCursor = 0;
+  private readonly rings: { mesh: Mesh; age: number }[] = [];
   private readonly m = new Matrix4();
   private readonly q = new Quaternion();
   private readonly s = new Vector3();
@@ -98,6 +127,16 @@ export class CombatFx {
     this.decals.frustumCulled = false;
     this.decals.receiveShadow = true;
     this.group.add(this.tracerMesh, this.decals);
+
+    this.scorches = new InstancedMesh(
+      new PlaneGeometry(1, 1).rotateX(-Math.PI / 2),
+      new MeshStandardMaterial({ map: scorchTexture(), transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, roughness: 1 }),
+      16,
+    );
+    this.scorches.count = 0;
+    this.scorches.frustumCulled = false;
+    this.scorches.receiveShadow = true;
+    this.group.add(this.scorches);
 
     for (let i = 0; i < 4; i++) {
       const light = new PointLight('#ffb062', 0, 12, 2);
@@ -134,7 +173,39 @@ export class CombatFx {
     flash.age = 0;
   }
 
+  /** Expanding shock ring and a scorch mark on the ground. */
+  blast(point: Vector3, groundY: number): void {
+    const ring = new Mesh(
+      new RingGeometry(0.93, 1, 64).rotateX(-Math.PI / 2),
+      new MeshBasicMaterial({ color: new Color(1.4, 0.9, 0.55), blending: AdditiveBlending, transparent: true, depthWrite: false, side: DoubleSide }),
+    );
+    ring.position.set(point.x, groundY + 0.06, point.z);
+    this.group.add(ring);
+    this.rings.push({ mesh: ring, age: 0 });
+    const size = 3.2 + Math.random();
+    this.m.compose(this.p.set(point.x, groundY + 0.012, point.z), this.q.setFromAxisAngle(new Vector3(0, 1, 0), Math.random() * 6.28), this.s.set(size, 1, size));
+    this.scorches.setMatrixAt(this.scorchCursor, this.m);
+    this.scorchCursor = (this.scorchCursor + 1) % 16;
+    this.scorches.count = Math.min(16, this.scorches.count + 1);
+    this.scorches.instanceMatrix.needsUpdate = true;
+  }
+
   update(dt: number): void {
+    for (let i = this.rings.length - 1; i >= 0; i--) {
+      const r = this.rings[i];
+      r.age += dt;
+      const t = r.age / 0.45;
+      if (t >= 1) {
+        this.group.remove(r.mesh);
+        r.mesh.geometry.dispose();
+        (r.mesh.material as MeshBasicMaterial).dispose();
+        this.rings.splice(i, 1);
+        continue;
+      }
+      r.mesh.scale.setScalar(0.5 + 9 * (1 - (1 - t) * (1 - t)));
+      (r.mesh.material as MeshBasicMaterial).opacity = (1 - t) * (1 - t);
+    }
+
     let n = 0;
     for (let i = this.tracers.length - 1; i >= 0; i--) {
       const t = this.tracers[i];

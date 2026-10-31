@@ -286,6 +286,7 @@ export class Props {
 
   explode(at: Vector3): void {
     this.particles.explosion(at);
+    this.fx.blast(at, 0);
     this.fx.flash(at.clone().setY(at.y + 0.8), 900, 0.6, '#ff8a3d', 30);
     this.audio.explosion(at);
     this.events.shake(1, at);
