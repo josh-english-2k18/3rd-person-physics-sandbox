@@ -68,3 +68,67 @@ export function frameQuaternion(primary: Vector3, secondary: Vector3, out = new 
   const z = c.crossVectors(x, y);
   return out.setFromRotationMatrix(new Matrix4().makeBasis(x, y, z));
 }
+
+/**
+ * A two-bone limb with a hinge joint (elbow / knee), measured once from a bind pose in which the
+ * joint is bent. Solving keeps the hinge anatomical: the upper bone is twisted so the middle joint
+ * flexes about its own axis instead of bending sideways (which crumples the mesh).
+ */
+export interface HingeChain {
+  upper: Bone;
+  lower: Bone;
+  end: Bone;
+  upperLength: number;
+  lowerLength: number;
+  /** Bone directions and hinge axis in each bone's local frame. */
+  upperAxis: Vector3;
+  upperHinge: Vector3;
+  lowerAxis: Vector3;
+  lowerHinge: Vector3;
+}
+
+export function measureHingeChain(upper: Bone, lower: Bone, end: Bone): HingeChain {
+  const s = upper.getWorldPosition(new Vector3());
+  const e = lower.getWorldPosition(new Vector3());
+  const w = end.getWorldPosition(new Vector3());
+  const hinge = new Vector3().crossVectors(e.clone().sub(s), w.clone().sub(e)).normalize();
+  const toLocal = (bone: Bone, v: Vector3) => v.clone().applyQuaternion(worldQuaternion(bone).invert()).normalize();
+  return {
+    upper,
+    lower,
+    end,
+    upperLength: s.distanceTo(e),
+    lowerLength: e.distanceTo(w),
+    upperAxis: toLocal(upper, e.clone().sub(s)),
+    upperHinge: toLocal(upper, hinge),
+    lowerAxis: toLocal(lower, w.clone().sub(e)),
+    lowerHinge: toLocal(lower, hinge),
+  };
+}
+
+/** Places `chain.end` at `target`, with the middle joint toward `pole`, flexing about its real hinge. */
+export function solveHinge(chain: HingeChain, target: Vector3, pole: Vector3): void {
+  const s = chain.upper.getWorldPosition(new Vector3());
+  const { upperLength: a, lowerLength: b } = chain;
+  const toTarget = target.clone().sub(s);
+  const dist = Math.min(Math.max(toTarget.length(), Math.abs(a - b) + 1e-3), (a + b) * 0.999);
+  const dir = toTarget.normalize();
+  const bend = pole.clone().sub(s);
+  bend.addScaledVector(dir, -bend.dot(dir));
+  if (bend.lengthSq() < 1e-8) bend.set(0, -1, 0).addScaledVector(dir, -dir.y);
+  bend.normalize();
+  const cosA = (a * a + dist * dist - b * b) / (2 * a * dist);
+  const angle = Math.acos(Math.min(Math.max(cosA, -1), 1));
+  const elbow = s.clone().addScaledVector(dir, Math.cos(angle) * a).addScaledVector(bend, Math.sin(angle) * a);
+  const wrist = s.clone().addScaledVector(dir, dist);
+  const d1 = elbow.clone().sub(s).normalize();
+  const d2 = wrist.clone().sub(elbow).normalize();
+  // Flexion axis of the bent limb (same orientation convention as measured in the bind pose).
+  const hinge = new Vector3().crossVectors(d1, d2);
+  if (hinge.lengthSq() < 1e-8) hinge.crossVectors(d1, bend);
+  hinge.normalize();
+  const orient = (axis: Vector3, localAxis: Vector3, localHinge: Vector3) =>
+    frameQuaternion(axis, hinge, new Quaternion()).multiply(frameQuaternion(localAxis, localHinge, new Quaternion()).invert());
+  setWorldQuaternion(chain.upper, orient(d1, chain.upperAxis, chain.upperHinge));
+  setWorldQuaternion(chain.lower, orient(d2, chain.lowerAxis, chain.lowerHinge));
+}

@@ -106,7 +106,6 @@ async function main(): Promise<void> {
       new GLTFLoader().loadAsync(ASSETS.operator),
       renderer.useHdri(ASSETS.sky).catch((e) => console.warn('HDRI sky unavailable; using the procedural sky', e)),
     ]);
-
     [clips, gltf] = await assets;
     const skeleton = clips.get(TARGET_CLIPS.idle)!.skeleton;
     splash.progress(0.05, 'Downloading MotionBricks SOMA model…');
@@ -149,7 +148,15 @@ async function main(): Promise<void> {
 
   loading = false;
   splash.ready();
-  if (TEST) Object.assign(window, { __game: { input, rig, player, weapon, preview, motion, locomotion, engine, physics } });
+  if (TEST) {
+    Object.assign(window, {
+      __game: {
+        input, rig, player, weapon, preview, motion, locomotion, engine, physics, soldier,
+        setCamera: (camera: typeof testCamera) => (testCamera = camera),
+        setCrouch: (value: boolean) => (crouched = value),
+      },
+    });
+  }
 
   document.addEventListener('pointerlockchange', () => {
     if (input.locked) {
@@ -167,6 +174,7 @@ async function main(): Promise<void> {
   }
 
   let crouched = false;
+  let testCamera: { offset: [number, number, number]; height: number; bone?: string } | null = null;
   const aimTarget = new Vector3();
   const camDir = new Vector3();
   const loop = () => {
@@ -213,6 +221,17 @@ async function main(): Promise<void> {
     physics.step(dt);
     props.update(dt);
     rig.update(dt, player.position, input.aim && active, input.held('sprint') && move.y > 0, crouched, player.collider);
+    if (TEST && testCamera) {
+      // Automation: look at the operator (or a bone of his) from a fixed offset without steering him.
+      const { offset, height, bone } = testCamera;
+      const focus = bone ? soldier.boneWorld(bone) : player.position.clone().add(new Vector3(0, height, 0));
+      renderer.camera.position.copy(bone ? focus : player.position).add(new Vector3(offset[0], offset[1], offset[2]));
+      renderer.camera.lookAt(focus);
+      if (bone && renderer.camera.fov !== 30) {
+        renderer.camera.fov = 30;
+        renderer.camera.updateProjectionMatrix();
+      }
+    }
     audio.setListener(rig.position);
     renderer.followShadows(player.position);
     particles.update(dt);
@@ -223,7 +242,6 @@ async function main(): Promise<void> {
     const laserDir = soldier.weaponForward;
     const laserHit = physics.world.castRay(new RAPIER.Ray(laserFrom, laserDir), 150, true, undefined, undefined, player.collider);
     laser.update(dt, active && input.aim, laserFrom, laserFrom.clone().addScaledVector(laserDir, laserHit ? laserHit.timeOfImpact : 150));
-
 
     const generation = motion.lastGeneration;
     if (generation) preview.setGeneration(generation);

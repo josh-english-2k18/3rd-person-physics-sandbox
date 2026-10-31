@@ -1,5 +1,6 @@
 import {
   Group,
+  MathUtils,
   Mesh,
   MeshPhysicalMaterial,
   MeshStandardMaterial,
@@ -10,7 +11,7 @@ import {
 } from 'three';
 import type { GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import type { Pose, Skeleton } from '../motion/skeleton';
-import { frameQuaternion, rotateWorld, setWorldQuaternion, solveTwoBone, worldQuaternion } from './ik';
+import { frameQuaternion, measureHingeChain, rotateWorld, setWorldQuaternion, solveHinge, solveTwoBone, worldQuaternion, type HingeChain } from './ik';
 import { addRimLight, setAnisotropy } from '../render/rimLight';
 import { Retargeter } from './retarget';
 
@@ -26,7 +27,7 @@ const WEAPON = {
   scale: 0.95,
   // Points in the weapon frame (forward +Z, up +Y, meters before scale).
   grip: new Vector3(0, -0.07, -0.2),
-  foregrip: new Vector3(0, -0.045, 0.12),
+  foregrip: new Vector3(0.024, -0.004, 0.11), // left side of the handguard, clear of the magazine
   butt: new Vector3(0, -0.02, -0.4),
   muzzle: new Vector3(0, 0.012, 0.41),
   sight: new Vector3(0, 0.11, -0.02),
@@ -44,10 +45,20 @@ const AIM = {
   spineShare: [0.2, 0.3, 0.5],
   maxYaw: 1.2,
   /** Shoulder pocket relative to the chest bone, in body axes (right, up, forward). */
-  pocketAim: new Vector3(0.12, 0.14, 0.02),
-  pocketReady: new Vector3(0.1, 0.06, 0.06),
+  // Tuned so both arms sit within ~65-90% of their (short) reach and clear the torso by 7+ cm in
+  // each pose: see Soldier.debug.
+  pocketAim: new Vector3(0.12, 0.14, 0.05),
+  pocketReady: new Vector3(0.14, 0.05, 0.1),
   readyPitch: -0.5,
-  readyYaw: 0.22,
+  readyYaw: 0.4,
+  /** Rifle stance: the torso turns this far right of the aim, bringing the support shoulder forward. */
+  bladeAim: 0.5,
+  bladeReady: 0.25,
+  /** The support-side collarbone rolls forward toward the handguard by this fraction. */
+  protract: 0.6,
+  /** Elbow pole targets relative to the chest, in torso axes (right, up, forward). */
+  rightElbow: new Vector3(1.0, -0.3, -0.1), // out to the side, clear of the torso
+  leftElbow: new Vector3(-0.35, -1.0, 0.2),
 };
 
 /** Procedural combat crouch layered over standing motion (feet stay where MotionBricks plants them). */
@@ -59,16 +70,54 @@ const CROUCH = {
   kneeSplay: 0.18,
 };
 
+/** Torso capsule radius (vest included) for keeping the arms out of the body. */
+const TORSO_RADIUS = 0.17;
+
 const UP = new Vector3(0, 1, 0);
 
 interface HandBind {
+  side: 'Left' | 'Right';
   hand: Bone;
-  arm: Bone;
-  foreArm: Bone;
-  /** Bind world rotation of the hand, and its bind palm frame. */
-  bindWorld: Quaternion;
-  bindFrame: Quaternion;
+  arm: HingeChain;
+  /** Finger direction (wrist -> middle knuckle) and palm normal, in the hand bone's frame. */
+  fingersLocal: Vector3;
+  palmLocal: Vector3;
+  /** Finger chains (proximal -> distal), thumb last. */
+  fingers: Bone[][];
+  thumb: Bone[];
+  /** Bind-pose local rotations of every finger joint (curls are re-applied from these each frame). */
+  rest: [Bone, Quaternion][];
 }
+
+/**
+ * How each hand holds the carbine, in the weapon frame: the palm faces the gun, fingers wrap it.
+ * Curls are per joint (proximal, middle, distal), radians toward the palm, added to the bind pose.
+ */
+const GRIP = {
+  right: {
+    // Palm against the right side of the pistol grip, knuckles toward its front strap.
+    fingers: (f: Vector3, u: Vector3, r: Vector3) => f.clone().multiplyScalar(0.9).addScaledVector(u, -0.35).addScaledVector(r, -0.1),
+    palm: (_f: Vector3, _u: Vector3, r: Vector3) => r.clone().negate(),
+    // Relative to the bind pose, whose hands are already closed around a grip: straighten the
+    // trigger finger along the guard, close the rest a touch.
+    curl: { index: [-0.45, -0.35, -0.1], other: [0.15, 0.1, 0.05], thumb: [0.15, 0.2, 0.1] },
+    // The palm surface sits this far from the grip's center line.
+    standoff: 0.028,
+  },
+  left: {
+    // Palm on the left side of the handguard, fingers angled forward and down so their natural
+    // curl wraps underneath it.
+    fingers: (f: Vector3, u: Vector3, r: Vector3) => f.clone().multiplyScalar(0.65).addScaledVector(u, -0.7).addScaledVector(r, 0.25),
+    palm: (_f: Vector3, u: Vector3, r: Vector3) => r.clone().multiplyScalar(0.9).addScaledVector(u, 0.3),
+    curl: { index: [0.2, 0.2, 0.1], other: [0.3, 0.3, 0.15], thumb: [0.1, 0.1, 0.05] },
+    standoff: 0.012,
+  },
+  /** Wrist bone to palm center, along the fingers / toward the palm. */
+  palmReach: 0.065,
+  palmDepth: 0.02,
+};
+
+const FINGERS = ['Index', 'Middle', 'Ring', 'Pinky'] as const;
 
 export interface AimState {
   /** World-space direction the weapon should point when aiming. */
@@ -84,6 +133,10 @@ export interface AimState {
 }
 
 export class Soldier {
+  /** Live-tunable stance (exposed for automated tuning runs). */
+  static readonly aim = AIM;
+  static readonly grip = GRIP;
+  static readonly weaponPoints = WEAPON;
   readonly root = new Group();
   readonly weapon = new Group();
   readonly muzzle = new Object3D();
@@ -150,17 +203,48 @@ export class Soldier {
     const handBind = (side: 'Left' | 'Right'): HandBind => {
       const hand = bone(`${side}Hand`);
       const p = (n: string) => bone(n).getWorldPosition(new Vector3());
-      const primary = p(`${side}HandMiddle1`).sub(p(`${side}Hand`));
+      const fingers = p(`${side}HandMiddle1`).sub(p(`${side}Hand`)).normalize();
       const across = p(`${side}HandIndex1`).sub(p(`${side}HandPinky1`));
+      // Palm normal from anatomy: with fingers forward and palm down, the index is on the inside,
+      // which makes (fingers x index->pinky) point up for a right hand and down for a left one.
+      const palm = new Vector3().crossVectors(fingers, across).normalize();
+      if (side === 'Right') palm.negate();
+      const toLocal = (v: Vector3) => v.clone().applyQuaternion(worldQuaternion(hand).invert());
+      const chain = (name: string) => [1, 2, 3].map((i) => bone(`${side}Hand${name}${i}`));
       return {
+        side,
         hand,
-        arm: bone(`${side}Arm`),
-        foreArm: bone(`${side}ForeArm`),
-        bindWorld: worldQuaternion(hand),
-        bindFrame: frameQuaternion(primary, across),
+        arm: measureHingeChain(bone(`${side}Arm`), bone(`${side}ForeArm`), hand),
+        fingersLocal: toLocal(fingers),
+        palmLocal: toLocal(palm),
+        fingers: FINGERS.map(chain),
+        thumb: chain('Thumb'),
+        rest: [...FINGERS, 'Thumb'].flatMap((n) => chain(n)).map((b) => [b, b.quaternion.clone()] as [Bone, Quaternion]),
       };
     };
     this.hands = { left: handBind('Left'), right: handBind('Right') };
+  }
+
+  /** IK diagnostics (wrist miss distance, required vs available reach), for tests. */
+  readonly debug: Record<string, { miss: number; need: number; reach: number; clearance: number }> = {};
+
+  /**
+   * How far the arm (mid upper arm, elbow, mid forearm) stays outside the torso, modeled as a
+   * capsule from the hips to the neck. Negative means the arm is inside the body.
+   */
+  private armClearance(bind: HandBind): number {
+    const hips = this.retargeter.bones.get('Hips')!.getWorldPosition(new Vector3());
+    const neck = this.neck.getWorldPosition(new Vector3());
+    const s = bind.arm.upper.getWorldPosition(new Vector3());
+    const e = bind.arm.lower.getWorldPosition(new Vector3());
+    const w = bind.hand.getWorldPosition(new Vector3());
+    const axis = neck.clone().sub(hips);
+    const toAxis = (p: Vector3) => {
+      const t = Math.min(Math.max(p.clone().sub(hips).dot(axis) / axis.lengthSq(), 0), 1);
+      return p.distanceTo(hips.clone().addScaledVector(axis, t));
+    };
+    const points = [s.clone().lerp(e, 0.6), e, e.clone().lerp(w, 0.5)];
+    return Math.min(...points.map(toAxis)) - TORSO_RADIUS * this.root.scale.x;
   }
 
   // Scratch
@@ -192,7 +276,14 @@ export class Soldier {
       const share = AIM.spineShare[i];
       rotateWorld(this.spine[i], this.q.setFromAxisAngle(UP, yawError * follow * share));
     }
+    // Blade the torso (turn it right of the aim) so the support shoulder comes forward.
+    const blade = MathUtils.lerp(AIM.bladeReady, AIM.bladeAim, aim.weight) * Math.max(follow, 0.6);
+    for (let i = 0; i < this.spine.length; i++) {
+      rotateWorld(this.spine[i], this.q.setFromAxisAngle(UP, -blade * AIM.spineShare[i]));
+    }
     const facing = new Vector3(Math.sin(bodyYaw + yawError * follow), 0, Math.cos(bodyYaw + yawError * follow));
+    const torsoYaw = bodyYaw + yawError * follow - blade;
+    const torso = new Vector3(Math.sin(torsoYaw), 0, Math.cos(torsoYaw));
     const sideAxis = this.right.crossVectors(facing, UP).normalize(); // body right
     for (let i = 0; i < this.spine.length; i++) {
       rotateWorld(this.spine[i], this.q.setFromAxisAngle(sideAxis, pitch * AIM.spineShare[i] * 0.8));
@@ -202,8 +293,15 @@ export class Soldier {
     rotateWorld(this.head, this.q.setFromAxisAngle(sideAxis, pitch * 0.05));
 
     // 2. Place the weapon: shouldered along the aim, or at low ready across the body.
+    // Roll the support collarbone forward.
+    const clavicle = this.retargeter.bones.get('LeftShoulder')!;
+    const armJoint = this.retargeter.bones.get('LeftArm')!;
+    const out = armJoint.getWorldPosition(new Vector3()).sub(clavicle.getWorldPosition(new Vector3())).normalize();
+    rotateWorld(clavicle, this.q.setFromUnitVectors(out, out.clone().lerp(facing, AIM.protract).normalize()));
+
     const chestPos = this.chest.getWorldPosition(new Vector3());
-    const body = { right: sideAxis.clone(), up: UP, forward: facing };
+    const torsoRight = new Vector3().crossVectors(torso, UP).normalize();
+    const body = { right: torsoRight, up: UP, forward: torso };
     const pocket = (offset: Vector3) =>
       chestPos.clone()
         .addScaledVector(body.right, offset.x)
@@ -233,17 +331,11 @@ export class Soldier {
     const wR = new Vector3().crossVectors(wF, wU); // weapon right
     const point = (local: Vector3) => local.clone().multiplyScalar(scale).applyQuaternion(this.weaponQ).add(this.weaponPos);
 
-    // Right hand on the pistol grip: palm against its right side, fingers wrapping forward-down.
-    const rPrimary = wF.clone().multiplyScalar(0.62).addScaledVector(wU, -0.72).addScaledVector(wR, -0.15);
-    const rAcross = wU.clone().multiplyScalar(0.7).addScaledVector(wF, 0.62);
-    this.placeHand(this.hands.right, point(WEAPON.grip), rPrimary, rAcross,
-      chestPos.clone().addScaledVector(body.right, 0.6).addScaledVector(UP, -0.6).addScaledVector(body.forward, -0.2));
-
-    // Left hand under the handguard, fingers wrapping over its right side.
-    const lPrimary = wR.clone().multiplyScalar(0.55).addScaledVector(wU, 0.35).addScaledVector(wF, 0.55);
-    const lAcross = wF.clone().multiplyScalar(0.85).addScaledVector(wR, -0.4);
-    this.placeHand(this.hands.left, point(WEAPON.foregrip), lPrimary, lAcross,
-      chestPos.clone().addScaledVector(body.right, -0.7).addScaledVector(UP, -0.7));
+    // Elbows: the trigger arm out and down, the support arm down under the gun.
+    const rightPole = pocket(AIM.rightElbow);
+    const leftPole = pocket(AIM.leftElbow);
+    this.placeHand(this.hands.right, GRIP.right, point(WEAPON.grip), wF, wU, wR, rightPole);
+    this.placeHand(this.hands.left, GRIP.left, point(WEAPON.foregrip), wF, wU, wR, leftPole);
   }
 
   private crouch(amount: number, forward: Vector3): void {
@@ -283,12 +375,47 @@ export class Soldier {
     this.weapon.updateMatrixWorld(true);
   }
 
-  private placeHand(bind: HandBind, palm: Vector3, primary: Vector3, across: Vector3, pole: Vector3): void {
-    const target = frameQuaternion(primary, across).multiply(bind.bindFrame.clone().invert()).multiply(bind.bindWorld);
-    // The hand bone sits at the wrist; the palm center is ~7 cm along the fingers.
-    const wrist = palm.clone().addScaledVector(primary.clone().normalize(), -0.075 * this.root.scale.x);
-    solveTwoBone(bind.arm, bind.foreArm, bind.hand, wrist, pole);
+  private placeHand(
+    bind: HandBind,
+    grip: typeof GRIP.right,
+    contact: Vector3,
+    f: Vector3,
+    u: Vector3,
+    r: Vector3,
+    pole: Vector3,
+  ): void {
+    const fingers = grip.fingers(f, u, r).normalize();
+    const palm = grip.palm(f, u, r);
+    palm.addScaledVector(fingers, -palm.dot(fingers)).normalize();
+    // Hand rotation: map the hand's own (fingers, palm) frame onto the grip's.
+    const target = frameQuaternion(fingers, palm).multiply(frameQuaternion(bind.fingersLocal, bind.palmLocal).invert());
+    // Palm surface on the gun; the wrist bone sits behind and above the palm center.
+    const s = this.root.scale.x;
+    const wrist = contact.clone()
+      .addScaledVector(palm, -(grip.standoff + GRIP.palmDepth) * s)
+      .addScaledVector(fingers, -GRIP.palmReach * s);
+    solveHinge(bind.arm, wrist, pole);
     setWorldQuaternion(bind.hand, target);
+    const shoulder = bind.arm.upper.getWorldPosition(new Vector3());
+    this.debug[bind.side] = {
+      miss: +bind.hand.getWorldPosition(new Vector3()).distanceTo(wrist).toFixed(3),
+      need: +shoulder.distanceTo(wrist).toFixed(3),
+      reach: +(bind.arm.upperLength + bind.arm.lowerLength).toFixed(3),
+      clearance: +this.armClearance(bind).toFixed(3),
+    };
+
+    // Curl the fingers around the gun (about the axis that swings them toward the palm).
+    for (const [joint, rest] of bind.rest) joint.quaternion.copy(rest);
+    bind.hand.updateMatrixWorld(true);
+    const axis = new Vector3().crossVectors(fingers, palm).normalize();
+    const curlChain = (chain: Bone[], angles: number[]) =>
+      chain.forEach((joint, i) => rotateWorld(joint, this.q.setFromAxisAngle(axis, angles[i])));
+    bind.fingers.forEach((chain, i) => curlChain(chain, i === 0 ? grip.curl.index : grip.curl.other));
+    curlChain(bind.thumb, grip.curl.thumb);
+  }
+
+  boneWorld(name: string): Vector3 {
+    return this.retargeter.bones.get(name)?.getWorldPosition(new Vector3()) ?? new Vector3();
   }
 
   get muzzleWorld(): Vector3 {
