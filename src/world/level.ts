@@ -119,8 +119,12 @@ export function buildLevel(physics: Physics): Level {
   for (let i = 0; i < 8; i++) {
     const a = (i / 8) * Math.PI * 2 + Math.PI / 8;
     const q = new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), -a);
-    box([Math.cos(a) * 12, 0.6, Math.sin(a) * 12], [0.8, 1.2, 4], i % 2 ? materials.block : materials.blue, q);
+    box([Math.cos(a) * 12, 0.45, Math.sin(a) * 12], [0.8, 0.9, 4], i % 2 ? materials.block : materials.blue, q);
   }
+
+  // Vault walls near the spawn (Space while running at them).
+  box([-5, 0.4, 3], [3, 0.8, 0.5], materials.accent);
+  box([5, 0.35, 2], [3, 0.7, 0.5], materials.accent);
 
   // Pillars along the east lane
   const pillarMaterial = materials.block;

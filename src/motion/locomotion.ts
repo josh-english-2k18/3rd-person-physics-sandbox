@@ -18,12 +18,15 @@ import { clonePose, copyPose, createPose, type Pose, type Skeleton } from './ske
 
 // --- Tuning ----------------------------------------------------------------------------------
 
-export type ModeName = 'jog' | 'strafe' | 'crouch';
+export type ModeName = 'jog' | 'strafe' | 'crouch' | 'crouchAim';
 
 interface Mode {
   name: ModeName;
   /** 1D modes face the direction of travel; 2D modes strafe and face the aim direction. */
   directional: boolean;
+  /** Crouched modes reuse the standing targets at walking pace; the crouch itself is procedural (Soldier). */
+  crouched?: boolean;
+  /** Normalizes speed into the blend space (the targets' natural range). */
   maxSpeed: number;
   defaultSpeed: number;
   minSpeed: number;
@@ -34,22 +37,35 @@ interface Mode {
   tokens: number[];
 }
 
+/**
+ * Locomotion generations span 8..14 tokens (1-2 s). Shorter spans and nearer targets react sooner
+ * but cannot fit a whole stride, which makes the model shuffle (see gait.test.ts).
+ */
 const TOKENS_8_14 = [8, 9, 10, 11, 12, 13, 14];
 
 const MODES: Record<ModeName, Mode> = {
   jog: { name: 'jog', directional: false, maxSpeed: 4.5, defaultSpeed: 2.3, minSpeed: 1.84, velocityScale: 0.97, positionScale: 1, transitionEarlyBy: 10, tokens: TOKENS_8_14 },
-  strafe: { name: 'strafe', directional: true, maxSpeed: 3, defaultSpeed: 2.3, minSpeed: 1.84, velocityScale: 0.95, positionScale: 0.9, transitionEarlyBy: 8, tokens: TOKENS_8_14 },
-  crouch: { name: 'crouch', directional: true, maxSpeed: 2.5, defaultSpeed: 1.5, minSpeed: 1.2, velocityScale: 0.9, positionScale: 0.8, transitionEarlyBy: 8, tokens: TOKENS_8_14 },
+  // Aimed movement: a jog-pose forward target with the blend range matched to the speed, so the
+  // idle center does not bleed in (half-idle, half-run poses read as hopping).
+  strafe: { name: 'strafe', directional: true, maxSpeed: 2.4, defaultSpeed: 2.2, minSpeed: 1.7, velocityScale: 0.95, positionScale: 0.9, transitionEarlyBy: 8, tokens: TOKENS_8_14 },
+  crouch: { name: 'crouch', directional: false, crouched: true, maxSpeed: 4.5, defaultSpeed: 1.35, minSpeed: 1.0, velocityScale: 0.97, positionScale: 1, transitionEarlyBy: 10, tokens: TOKENS_8_14 },
+  crouchAim: { name: 'crouchAim', directional: true, crouched: true, maxSpeed: 2.4, defaultSpeed: 1.35, minSpeed: 1.0, velocityScale: 0.95, positionScale: 0.9, transitionEarlyBy: 8, tokens: TOKENS_8_14 },
 };
 
 const MOVEMENT = {
-  facingHalfLife: 0.15,
-  velocityDirHalfLife: 0.2,
-  accelHalfLife: 0.6,
-  decelHalfLife: 0.4,
-  speedRegenFraction: 0.3,
-  minSpeedRegenFraction: 0.1,
-  dirRegenDot: 0.92,
+  // Tuned for a shooter: snappier than the Scene Preview defaults (0.15 / 0.2 / 0.6 / 0.4).
+  facingHalfLife: 0.07,
+  velocityDirHalfLife: 0.07,
+  accelHalfLife: 0.18,
+  decelHalfLife: 0.12,
+  /** Starting from rest jumps straight to this fraction of the input speed. */
+  startBoost: 0.85,
+  speedRegenFraction: 0.15,
+  minSpeedRegenFraction: 0.06,
+  /** Regenerate when the desired direction drifts past ~14 degrees from the last generation. */
+  dirRegenDot: 0.97,
+  /** Slow down while turning harder than ~23 degrees. */
+  turnSlowDot: 0.92,
   maxDirChangeReduction: 0.25,
   /** Standing still: turn in place when the aim drifts this far from the body (radians). */
   idleTurnThreshold: 0.75,
@@ -59,18 +75,14 @@ const MOVEMENT = {
 /** Clip windows used as blend-space targets (clip file, frame at 120 Hz). */
 export const TARGET_CLIPS = {
   idle: 'idle_loop_001__A268',
-  crouchIdle: 'crouch_idle_001__A529',
   walk: 'neutral_walk_ff_180_R_002__A536_M',
   jog: 'neutral_jog_ff_180_R_001__A534',
   run: 'run_loop_180_R_003__A326',
   runFast: 'run_loop_180_R_003__A331',
   back: 'jog_ff_loop_360_R_very_fast_001__A454',
+  jump: 'jump_over_obstacle_no_hand_0_75m_R_103__A416',
   left: 'jog_ff_loop_270_R_very_fast_002__A455_M',
   right: 'jog_ff_loop_270_R_very_fast_002__A455',
-  crouchForward: 'crouch_ff_loop_180_R_001__A196',
-  crouchBack: 'crouch_ff_loop_360_R_001__A196',
-  crouchLeft: 'crouch_ff_loop_270_R_002__A196_M',
-  crouchRight: 'crouch_ff_loop_270_R_002__A196',
 } as const;
 
 // --- Pose placement ---------------------------------------------------------------------------
@@ -260,7 +272,7 @@ class MovementControl {
       this.inputAngle = headingOf(input.move.x, input.move.y);
       this.desiredFacing = mode.directional ? input.aimHeading : this.inputAngle;
       this.lastInputFacing = this.desiredFacing;
-      const speed = input.sprint && !mode.directional ? mode.maxSpeed : mode.defaultSpeed;
+      const speed = input.sprint && !mode.directional && !mode.crouched ? mode.maxSpeed : mode.defaultSpeed;
       this.inputSpeed = Math.max(speed * Math.min(amount, 1), mode.minSpeed);
     }
     if (modeChangedFrom) {
@@ -284,7 +296,7 @@ class MovementControl {
       this.facingRate = this.velocityRate;
     }
     let goal = this.inputSpeed;
-    if (Math.cos(this.velocityAngle - this.inputAngle) < MOVEMENT.dirRegenDot) goal *= this.reduction(mode);
+    if (Math.cos(this.velocityAngle - this.inputAngle) < MOVEMENT.turnSlowDot) goal *= this.reduction(mode);
     [this.speed, this.speedRate] = spring(this.speed, this.speedRate, goal, goal > this.speed ? MOVEMENT.accelHalfLife : MOVEMENT.decelHalfLife, dt);
     if (this.speed > mode.maxSpeed) {
       this.speed = mode.maxSpeed;
@@ -303,6 +315,15 @@ class MovementControl {
     if (!mode.directional) this.facing = this.velocityAngle;
   }
 
+  /** Starting from rest: head straight for the input and skip most of the acceleration ramp. */
+  kickStart(): void {
+    this.velocityAngle = this.inputAngle;
+    this.speed = Math.max(this.speed, this.inputSpeed * MOVEMENT.startBoost);
+    if (this.speed > 0 && Math.abs(Math.sin(this.facing - this.inputAngle)) > 0 && this.facingRate === 0) {
+      // 1D modes face the direction of travel immediately.
+    }
+  }
+
   reset(): void {
     this.speed = this.speedRate = 0;
   }
@@ -310,7 +331,21 @@ class MovementControl {
 
 // --- State machine ----------------------------------------------------------------------------
 
-type State = 'idle' | 'locomotion';
+/**
+ * The vault, after MotionBricks' jump_0_75m Smart Primitive: three target windows from a no-hands
+ * hurdle clip (run-up, apex over the obstacle, run-out), hips unconstrained so the jump height comes
+ * from the clip. Times are in the clip; the apex sits over the obstacle.
+ */
+const JUMP_STAGES = [
+  { time: 1.42, transitionEarlyBy: 8 },
+  { time: 2.05, transitionEarlyBy: 2 },
+  { time: 3.11, transitionEarlyBy: 6 },
+];
+const JUMP_TOKENS = [6, 7, 8, 9, 10, 11, 12, 13, 14];
+/** Distance from the run-up target to the obstacle in the clip (m). */
+export const JUMP_RUNUP = 1.76;
+
+type State = 'idle' | 'locomotion' | 'vault';
 
 export interface LocomotionStatus {
   state: State;
@@ -326,7 +361,6 @@ export class LocomotionController {
   private readonly clips: Map<string, Clip>;
   private readonly linear: LinearBlendSpace;
   private readonly strafe: DirectionalBlendSpace;
-  private readonly crouch: DirectionalBlendSpace;
   private readonly movement = new MovementControl();
   private readonly blended: Pose[];
   readonly targets: Pose[];
@@ -337,11 +371,13 @@ export class LocomotionController {
   private idleClip: Clip;
   /** Set while the transition into idle is generating/playing: the generation count to wait for. */
   private idleTransition = 0;
+  private readonly jumpWindows: Pose[][];
+  private vaultState: { stages: { poses: Pose[]; transitionEarlyBy: number }[]; next: number; awaiting: number; heading: number } | null = null;
   private idlePending: { velocity: Vector2; facing: number } | null = null;
   private pending = false;
   private forceRegen = false;
-  /** Average inference latency, used to request generations early enough. */
-  private latency = 0.12;
+  /** Average inference latency in game time, used to request generations early enough. */
+  private latency = 0.08;
 
   constructor(skeleton: Skeleton, player: MotionPlayer, clips: Map<string, Clip>) {
     this.skeleton = skeleton;
@@ -361,20 +397,83 @@ export class LocomotionController {
       { value: 1, target: target(TARGET_CLIPS.run, 49) },
     ]);
     this.strafe = new DirectionalBlendSpace(target(TARGET_CLIPS.idle, 0), [
-      { value: new Vector2(1, 0), target: target(TARGET_CLIPS.runFast, 57) },
+      { value: new Vector2(1, 0), target: target(TARGET_CLIPS.walk, 306) },
       { value: new Vector2(-1, 0), target: target(TARGET_CLIPS.back, 107) },
       { value: new Vector2(0, 1), target: target(TARGET_CLIPS.left, 61) },
       { value: new Vector2(0, -1), target: target(TARGET_CLIPS.right, 61) },
     ]);
-    this.crouch = new DirectionalBlendSpace(target(TARGET_CLIPS.crouchIdle, 0), [
-      { value: new Vector2(1, 0), target: target(TARGET_CLIPS.crouchForward, 186) },
-      { value: new Vector2(-1, 0), target: target(TARGET_CLIPS.crouchBack, 309) },
-      { value: new Vector2(0, 1), target: target(TARGET_CLIPS.crouchLeft, 252) },
-      { value: new Vector2(0, -1), target: target(TARGET_CLIPS.crouchRight, 252) },
-    ]);
     this.blended = Array.from({ length: POSES_PER_TOKEN }, () => createPose(skeleton.count));
     this.targets = Array.from({ length: POSES_PER_TOKEN }, () => createPose(skeleton.count));
     this.idleClip = clip(TARGET_CLIPS.idle);
+
+    // Vault stages, expressed with the apex over the origin and travel along +Z (heading 0).
+    const jump = clip(TARGET_CLIPS.jump);
+    const windows = JUMP_STAGES.map((stage) =>
+      Array.from({ length: POSES_PER_TOKEN }, (_, k) => jump.sample(stage.time + k / SAMPLE_RATE, skeleton.createPose())),
+    );
+    const apex = new Vector3(windows[1][0].pos[0], 0, windows[1][0].pos[2]);
+    const travel = Math.atan2(windows[2][0].pos[0] - windows[0][0].pos[0], windows[2][0].pos[2] - windows[0][0].pos[2]);
+    for (const window of windows) for (const pose of window) reframe(pose, apex, travel, ORIGIN, 0);
+    this.jumpWindows = windows;
+  }
+
+  /** The velocity the player is asking for right now (zero when there is no input). */
+  get vaulting(): boolean {
+    return this.state === 'vault';
+  }
+
+  /**
+   * Vaults with the apex over `anchor` (ground point), travelling along `heading`. With no
+   * obstacle this is simply a running jump. Returns false if a vault is already under way.
+   */
+  vault(anchor: Vector3, heading: number, skipRunUp: boolean): boolean {
+    if (this.state === 'vault' || this.player.busy) return false;
+    const stages = this.jumpWindows
+      .map((window, i) => ({
+        poses: window.map((pose) => {
+          const placed = clonePose(pose);
+          reframe(placed, ORIGIN, 0, new Vector3(anchor.x, 0, anchor.z), heading);
+          return placed;
+        }),
+        transitionEarlyBy: JUMP_STAGES[i].transitionEarlyBy,
+      }))
+      .slice(skipRunUp ? 1 : 0);
+    this.vaultState = { stages, next: 0, awaiting: 0, heading };
+    this.state = 'vault';
+    this.idleTransition = 0;
+    this.idlePending = null;
+    this.requestVaultStage();
+    return true;
+  }
+
+  private requestVaultStage(): void {
+    const v = this.vaultState!;
+    const stage = v.stages[v.next++];
+    stage.poses.forEach((pose, k) => copyPose(pose, this.targets[k]));
+    v.awaiting = this.player.generations + 1;
+    this.request(stage.transitionEarlyBy, JUMP_TOKENS);
+  }
+
+  private updateVault(dt: number, actualVelocity: Vector2): void {
+    const v = this.vaultState!;
+    if (this.player.busy || this.player.generations < v.awaiting) return;
+    if (this.player.timeToTransition > dt + this.latency) return;
+    if (v.next < v.stages.length) return this.requestVaultStage();
+    // Landed: carry on running, or settle into idle.
+    this.vaultState = null;
+    this.movement.facing = this.movement.velocityAngle = v.heading;
+    if (this.movement.inputSpeed > 0) {
+      this.state = 'locomotion';
+      this.movement.realign(actualVelocity, this.mode);
+      this.forceRegen = true;
+    } else {
+      this.state = 'idle';
+      this.idlePending = { velocity: actualVelocity.clone(), facing: v.heading };
+    }
+  }
+
+  get desiredVelocity(): Vector2 {
+    return this.state === 'locomotion' && this.movement.inputSpeed > 0 ? this.movement.velocity : new Vector2();
   }
 
   get status(): LocomotionStatus {
@@ -397,17 +496,19 @@ export class LocomotionController {
 
   /** Per frame: may request a generation. `groundPosition` is where the character actually is. */
   update(input: LocomotionInput, dt: number, groundPosition: Vector3, actualVelocity: Vector2): void {
-    const nextMode = input.crouch ? MODES.crouch : input.aiming ? MODES.strafe : MODES.jog;
+    const nextMode = input.aiming ? (input.crouch ? MODES.crouchAim : MODES.strafe) : input.crouch ? MODES.crouch : MODES.jog;
     const changedFrom = nextMode !== this.mode ? this.mode : null;
-    const crouchChanged = changedFrom && (changedFrom.name === 'crouch') !== (nextMode.name === 'crouch');
     this.mode = nextMode;
     this.movement.update(input, this.mode, dt, changedFrom);
     if (changedFrom) this.forceRegen = true;
+
+    if (this.state === 'vault') return this.updateVault(dt, actualVelocity);
 
     if (this.state === 'idle') {
       if (this.movement.inputSpeed > 0) {
         this.state = 'locomotion';
         this.movement.realign(actualVelocity, this.mode);
+        this.movement.kickStart();
         this.forceRegen = true;
       } else {
         if (this.player.busy) return;
@@ -415,7 +516,7 @@ export class LocomotionController {
         const drift = Math.abs(wrapAngle(input.aimHeading - this.idleFacing));
         if (this.idlePending) {
           this.enterIdle(groundPosition, this.idlePending.velocity, this.idlePending.facing);
-        } else if (crouchChanged || drift > threshold) {
+        } else if (drift > threshold) {
           this.enterIdle(groundPosition, new Vector2(), input.aimHeading);
         } else if (
           this.idleTransition &&
@@ -469,8 +570,7 @@ export class LocomotionController {
       const f = new Vector2(Math.sin(movement.facing), Math.cos(movement.facing));
       const left = new Vector2(f.y, -f.x);
       const v = velocity.clone().divideScalar(mode.maxSpeed);
-      const space = mode.name === 'crouch' ? this.crouch : this.strafe;
-      space.evaluate(clamp1(v.dot(f)), clamp1(v.dot(left)), this.blended);
+      this.strafe.evaluate(clamp1(v.dot(f)), clamp1(v.dot(left)), this.blended);
     } else {
       this.linear.evaluate(speed / mode.maxSpeed, this.blended);
     }
@@ -486,9 +586,9 @@ export class LocomotionController {
     this.movement.reset();
     this.lastGenVelocity.set(0, 0);
     this.idleFacing = facing;
-    this.idleClip = this.clips.get(this.mode.name === 'crouch' ? TARGET_CLIPS.crouchIdle : TARGET_CLIPS.idle)!;
+    this.idleClip = this.clips.get(TARGET_CLIPS.idle)!;
     this.idlePending = null;
-    const place = new Vector3(ground.x + actualVelocity.x * 0.5, 0, ground.z + actualVelocity.y * 0.5);
+    const place = new Vector3(ground.x + actualVelocity.x * 0.35, 0, ground.z + actualVelocity.y * 0.35);
     const window = Array.from({ length: POSES_PER_TOKEN }, (_, k) => this.idleClip.sample(k / SAMPLE_RATE, this.skeleton.createPose()));
     const { ground: g0, heading: h0 } = poseFrame(this.skeleton, window[0]);
     window.forEach((pose, k) => {
@@ -496,7 +596,7 @@ export class LocomotionController {
       copyPose(pose, this.targets[k]);
     });
     this.idleTransition = this.player.generations + 1;
-    this.request(0, TOKENS_8_14);
+    this.request(0, [6, 7, 8, 9, 10]);
   }
 
   private playIdleClip(ground: Vector3, heading: number): void {
@@ -515,12 +615,10 @@ export class LocomotionController {
 
   private request(transitionEarlyBy: number, tokens: number[]): void {
     const targets = this.targets.map(clonePose);
-    const started = performance.now();
     this.player
       .generate(targets, { transitionEarlyBy, allowedTokens: tokens })
       .then(() => {
-        const seconds = (performance.now() - started) / 1000;
-        this.latency = this.latency * 0.8 + Math.min(seconds, 0.5) * 0.2;
+        this.latency = this.latency * 0.8 + Math.min(this.player.lastLatency, 0.3) * 0.2;
       })
       .catch((error) => console.error('MotionBricks generation failed', error));
   }

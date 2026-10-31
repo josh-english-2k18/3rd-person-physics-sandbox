@@ -34,7 +34,6 @@ const FILES = [
   { src: 'assets/motions/README.md', dst: 'clips/README.md', lfs: false },
   ...[
     'locomotion/idle/idle_loop_001__A268.bvh',
-    'locomotion/idle/crouch_idle_001__A529.bvh',
     'locomotion/bs_1d_linear/neutral_jog_ff_180_R_001__A534.bvh',
     'locomotion/bs_1d_linear/run_loop_180_R_003__A326.bvh',
     'locomotion/bs_1d_linear/run_loop_180_R_003__A331.bvh',
@@ -42,10 +41,7 @@ const FILES = [
     'locomotion/bs_2d_directional/jog_ff_loop_360_R_very_fast_001__A454.bvh',
     'locomotion/bs_2d_directional/jog_ff_loop_270_R_very_fast_002__A455.bvh',
     'locomotion/bs_2d_directional/jog_ff_loop_270_R_very_fast_002__A455_M.bvh',
-    'locomotion/bs_2d_directional_crouch/crouch_ff_loop_360_R_001__A196.bvh',
-    'locomotion/bs_2d_directional_crouch/crouch_ff_loop_180_R_001__A196.bvh',
-    'locomotion/bs_2d_directional_crouch/crouch_ff_loop_270_R_002__A196.bvh',
-    'locomotion/bs_2d_directional_crouch/crouch_ff_loop_270_R_002__A196_M.bvh',
+    'jump/jump_over_obstacle_no_hand_0_75m_R_103__A416.bvh',
   ].map((clip) => ({ src: `assets/motions/soma/${clip}`, dst: `clips/${clip.split('/').pop()}` })),
 ];
 

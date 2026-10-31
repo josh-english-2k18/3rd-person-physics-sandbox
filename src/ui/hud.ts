@@ -8,7 +8,8 @@ const CONTROLS = [
   ['LMB', 'Fire'],
   ['RMB', 'Aim / strafe'],
   ['Shift', 'Sprint'],
-  ['C', 'Crouch'],
+  ['C', 'Crouch (toggle)'],
+  ['Space', 'Jump / vault'],
   ['R', 'Reload'],
   ['G', 'Motion preview'],
 ];

@@ -8,6 +8,7 @@ export const KEYS = {
   sprint: ['ShiftLeft', 'ShiftRight'],
   crouch: ['KeyC', 'ControlLeft'],
   reload: ['KeyR'],
+  jump: ['Space'],
   preview: ['KeyG'],
   hud: ['KeyH'],
 };
@@ -25,7 +26,7 @@ export class Input {
     window.addEventListener('keydown', (e) => {
       if (!this.down.has(e.code)) this.pressed.add(e.code);
       this.down.add(e.code);
-      if (this.locked && (e.code === 'Tab' || e.code.startsWith('Control'))) e.preventDefault();
+      if (this.locked && (e.code === 'Tab' || e.code === 'Space' || e.code.startsWith('Control'))) e.preventDefault();
     });
     window.addEventListener('keyup', (e) => this.down.delete(e.code));
     window.addEventListener('blur', () => {

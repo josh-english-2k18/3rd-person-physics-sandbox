@@ -166,6 +166,7 @@ async function main(): Promise<void> {
     input.locked = true;
   }
 
+  let crouched = false;
   const aimTarget = new Vector3();
   const camDir = new Vector3();
   const loop = () => {
@@ -176,6 +177,9 @@ async function main(): Promise<void> {
     if (input.tapped('preview')) preview.visible = !preview.visible;
     if (input.tapped('hud')) hud.visible = !hud.visible;
     if (input.tapped('reload')) weapon.reload();
+    if (input.tapped('crouch')) crouched = !crouched;
+    if (active && input.tapped('jump') && player.jump()) crouched = false;
+    if (input.held('sprint') && input.held('forward')) crouched = false;
 
     // Where the crosshair points in the world.
     rig.direction(camDir);
@@ -196,7 +200,7 @@ async function main(): Promise<void> {
       aimDirection,
       aiming,
       sprint: input.held('sprint'),
-      crouch: input.held('crouch'),
+      crouch: crouched,
       recoil: weapon.recoil,
     });
 
@@ -208,7 +212,7 @@ async function main(): Promise<void> {
 
     physics.step(dt);
     props.update(dt);
-    rig.update(dt, player.position, input.aim && active, input.held('sprint') && move.y > 0, input.held('crouch'), player.collider);
+    rig.update(dt, player.position, input.aim && active, input.held('sprint') && move.y > 0, crouched, player.collider);
     audio.setListener(rig.position);
     renderer.followShadows(player.position);
     particles.update(dt);

@@ -15,6 +15,7 @@ import { blendPoses, clonePose, copyPose, type Pose, type Skeleton } from './ske
 
 const HISTORY = 32;
 const FADE = 0.18;
+const ROOT_FADE = 0.05;
 
 class MotionRecorder {
   readonly poses: Pose[];
@@ -93,6 +94,8 @@ export class MotionPlayer {
   /** Total playback time; measures inference latency in game time. */
   private clock = 0;
   private version = 0;
+  /** Game time between the last request and its arrival (what transition timing must cover). */
+  lastLatency = 0;
   generations = 0;
 
   constructor(engine: MotionBricksEngine, skeleton: Skeleton, initialPose: Pose) {
@@ -158,7 +161,8 @@ export class MotionPlayer {
     this.lastGeneration = generation;
     this.transitionEarlyBy = options.transitionEarlyBy;
     // Catch up on the time spent waiting for inference, then crossfade from what was playing.
-    this.switchTo({ kind: 'generated', generation, shift: new Vector3() }, this.clock - requested);
+    this.lastLatency = this.clock - requested;
+    this.switchTo({ kind: 'generated', generation, shift: new Vector3() }, this.lastLatency);
     this.generations++;
     return generation;
   }
@@ -200,7 +204,14 @@ export class MotionPlayer {
       this.fade = Math.min(1, this.fade + dt / FADE);
       this.sampleSource(this.previous.source, this.previous.time, this.fadePose);
       const w = this.fade * this.fade * (3 - 2 * this.fade);
+      // The root hands over almost at once so new steering takes effect immediately;
+      // the rest of the body eases in to hide the seam.
+      const rootW = Math.min(1, (this.fade * FADE) / ROOT_FADE);
+      const rx = this.fadePose.pos[0] + (out.pos[0] - this.fadePose.pos[0]) * rootW;
+      const rz = this.fadePose.pos[2] + (out.pos[2] - this.fadePose.pos[2]) * rootW;
       blendPoses(this.fadePose, out, w, out);
+      out.pos[0] = rx;
+      out.pos[2] = rz;
     } else {
       this.previous = null;
     }

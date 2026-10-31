@@ -1,6 +1,6 @@
 import { Vector2, Vector3 } from 'three';
 import type { Soldier } from '../character/soldier';
-import { LocomotionController, type LocomotionInput } from '../motion/locomotion';
+import { JUMP_RUNUP, LocomotionController, type LocomotionInput } from '../motion/locomotion';
 import type { MotionPlayer } from '../motion/player';
 import { clonePose, type Pose } from '../motion/skeleton';
 import { RAPIER, type Physics } from '../world/physics';
@@ -18,6 +18,25 @@ const BODY = {
   stepHeight: 0.38,
   maxSlope: (50 * Math.PI) / 180,
   gravity: 20,
+};
+
+/**
+ * Input assist: the capsule closes this fraction of the gap between the requested velocity and the
+ * generated root velocity, so WASD lands instantly while the animation catches up. The extra
+ * displacement is folded back into the motion, so the next generation starts where the body is.
+ */
+const VAULT = {
+  minHeight: 0.25,
+  maxHeight: 1.05,
+  reach: 2.6, // look this far ahead for an obstacle
+  landing: 1.4, // needs clear ground this far past its near face
+  jumpApexAhead: 1.3, // with nothing to vault, the apex lands this far ahead
+};
+
+const ASSIST = {
+  strength: 0.55,
+  maxSpeed: 2.2, // m/s of help at most
+  brake: 0.4,
 };
 
 export interface PlayerInput {
@@ -45,6 +64,7 @@ export class PlayerCharacter {
   private readonly velocity = new Vector2();
   private aimWeight = 0;
   private bodyFollow = 0;
+  private crouchWeight = 0;
   onFootstep?: (at: Vector3, weight: number) => void;
 
   constructor(
@@ -73,6 +93,52 @@ export class PlayerCharacter {
     this.groundY = spawn.y;
   }
 
+  /** Adds an assisted ground displacement and folds it into the playing motion. */
+  private assist(desired: Vector3, delta: Vector2): void {
+    desired.x += delta.x;
+    desired.z += delta.y;
+    this.motion.shiftRoot(delta.x, delta.y);
+  }
+
+  /**
+   * Space: vault over a low obstacle ahead (0.25-1.05 m tall, with room to land), or jump.
+   */
+  jump(): boolean {
+    // Go the way we're moving; standing still, the way the body faces.
+    const heading = this.velocity.length() > 0.6 ? Math.atan2(this.velocity.x, this.velocity.y) : this.locomotion.facing;
+    const dir = new Vector3(Math.sin(heading), 0, Math.cos(heading));
+    const feet = this.position;
+    const world = this.physics.world;
+    const cast = (from: Vector3, to: Vector3, max: number) =>
+      world.castRay(new RAPIER.Ray(from, to), max, true, undefined, undefined, this.collider);
+
+    let anchor = feet.clone().addScaledVector(dir, VAULT.jumpApexAhead);
+    let skipRunUp = true;
+    const hit = cast(feet.clone().add(new Vector3(0, 0.4, 0)), dir, VAULT.reach);
+    if (hit) {
+      const face = feet.clone().add(new Vector3(0, 0.4, 0)).addScaledVector(dir, hit.timeOfImpact);
+      const over = face.clone().addScaledVector(dir, 0.12);
+      const down = cast(over.clone().setY(feet.y + VAULT.maxHeight + 0.3), new Vector3(0, -1, 0), VAULT.maxHeight + 0.3);
+      const top = down ? feet.y + VAULT.maxHeight + 0.3 - down.timeOfImpact : Infinity;
+      const height = top - feet.y;
+      // Is there room to land beyond it, at about the same level?
+      const beyond = face.clone().addScaledVector(dir, VAULT.landing).setY(feet.y + VAULT.maxHeight + 0.3);
+      const landing = cast(beyond, new Vector3(0, -1, 0), VAULT.maxHeight + 1);
+      const landingY = landing ? beyond.y - landing.timeOfImpact : -Infinity;
+      const clear = !cast(feet.clone().setY(top + 0.45), dir, hit.timeOfImpact + VAULT.landing);
+      if (height < VAULT.minHeight) {
+        // Low enough to just jump over.
+      } else if (height <= VAULT.maxHeight && clear && Math.abs(landingY - feet.y) < 0.35) {
+        anchor = over;
+        // Only aim for the run-up pose when it is comfortably ahead; otherwise go straight for the leap.
+        skipRunUp = hit.timeOfImpact < JUMP_RUNUP + 0.8;
+      } else {
+        return false; // too tall or no room: don't leap into a wall
+      }
+    }
+    return this.locomotion.vault(anchor, heading, skipRunUp);
+  }
+
   get groundOffset(): Vector3 {
     return new Vector3(0, this.groundY, 0);
   }
@@ -98,14 +164,32 @@ export class PlayerCharacter {
     this.previousContacts.set(this.contacts);
     this.motion.sample(dt, this.pose, this.contacts);
     const desired = new Vector3(this.pose.pos[0] - this.position.x, 0, this.pose.pos[2] - this.position.z);
+    const wanted = this.locomotion.desiredVelocity;
+    if (wanted.lengthSq() > 0) {
+      const generated = new Vector2(desired.x, desired.z).divideScalar(Math.max(dt, 1e-4));
+      const help = wanted.clone().sub(generated).multiplyScalar(ASSIST.strength);
+      // Only help in the direction the player is pushing (never fight the motion's own steps).
+      const along = help.dot(wanted) / wanted.length();
+      if (along > 0) this.assist(desired, help.clampLength(0, ASSIST.maxSpeed).multiplyScalar(dt));
+    } else if (this.locomotion.status.state === 'idle') {
+      // Keys released: shave off some of the generated run-out so stops feel crisp.
+      const generated = new Vector2(desired.x, desired.z);
+      if (generated.length() / Math.max(dt, 1e-4) > 0.3) this.assist(desired, generated.multiplyScalar(-ASSIST.brake));
+    }
 
     // 3. Move the capsule through the world (with gravity), and hand any blocked motion back.
-    this.verticalVelocity -= BODY.gravity * dt;
-    desired.y = this.verticalVelocity * dt;
-    this.controller.computeColliderMovement(this.collider, desired);
-    const moved = this.controller.computedMovement();
-    if (this.controller.computedGrounded()) this.verticalVelocity = 0;
+    //    While vaulting, the motion owns the path: the capsule follows it straight over the obstacle.
     const t = this.body.translation();
+    let moved = { x: desired.x, y: 0, z: desired.z };
+    if (this.locomotion.vaulting) {
+      this.verticalVelocity = 0;
+    } else {
+      this.verticalVelocity -= BODY.gravity * dt;
+      desired.y = this.verticalVelocity * dt;
+      this.controller.computeColliderMovement(this.collider, desired);
+      moved = this.controller.computedMovement();
+      if (this.controller.computedGrounded()) this.verticalVelocity = 0;
+    }
     const next = { x: t.x + moved.x, y: t.y + moved.y, z: t.z + moved.z };
     // Teleport the kinematic body now (frames can outpace the fixed physics step).
     this.body.setTranslation(next, true);
@@ -125,15 +209,19 @@ export class PlayerCharacter {
     this.motion.recordPose(dt, clonePose(this.pose));
 
     // 5. Pose the soldier, with the aim layer.
-    const aiming = input.aiming ? 1 : 0;
+    const vaulting = this.locomotion.vaulting;
+    const aiming = input.aiming && !vaulting ? 1 : 0;
     this.aimWeight += (aiming - this.aimWeight) * Math.min(1, dt * 14);
-    const follow = input.aiming || this.locomotion.status.mode !== 'jog' ? 1 : 0;
+    const mode = this.locomotion.status.mode;
+    const follow = input.aiming || mode === 'strafe' || mode === 'crouchAim' ? 1 : 0;
+    this.crouchWeight += ((input.crouch && !vaulting ? 1 : 0) - this.crouchWeight) * Math.min(1, dt * 9);
     this.bodyFollow += (follow - this.bodyFollow) * Math.min(1, dt * 6);
     this.soldier.update(this.pose, this.groundOffset, {
       direction: input.aimDirection,
       weight: this.aimWeight,
       bodyFollow: this.bodyFollow,
       recoil: input.recoil,
+      crouch: this.crouchWeight * this.crouchWeight * (3 - 2 * this.crouchWeight),
     });
 
     // Footsteps on heel strikes.

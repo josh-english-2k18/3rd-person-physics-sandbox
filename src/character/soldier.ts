@@ -50,6 +50,15 @@ const AIM = {
   readyYaw: 0.22,
 };
 
+/** Procedural combat crouch layered over standing motion (feet stay where MotionBricks plants them). */
+const CROUCH = {
+  drop: 0.3, // hips lowered by this much (m)
+  back: 0.05, // and pushed back, so the weight sits over the heels
+  pelvisPitch: 0.32, // radians forward
+  chestCounter: 0.2, // radians back, keeping the chest fairly upright
+  kneeSplay: 0.18,
+};
+
 const UP = new Vector3(0, 1, 0);
 
 interface HandBind {
@@ -70,6 +79,8 @@ export interface AimState {
   bodyFollow: number;
   /** Recoil impulse 0..1, decays in the caller. */
   recoil: number;
+  /** 0 = standing, 1 = combat crouch. */
+  crouch: number;
 }
 
 export class Soldier {
@@ -169,6 +180,7 @@ export class Soldier {
     const left = this.retargeter.bones.get('LeftUpLeg')!.getWorldPosition(new Vector3());
     const across = left.sub(this.retargeter.bones.get('RightUpLeg')!.getWorldPosition(new Vector3()));
     const bodyForward = this.fwd.crossVectors(across, UP).normalize();
+    if (aim.crouch > 1e-3) this.crouch(aim.crouch, bodyForward);
 
     // 1. Twist the spine toward the aim (yaw), then pitch.
     const aimYaw = Math.atan2(aim.direction.x, aim.direction.z);
@@ -232,6 +244,33 @@ export class Soldier {
     const lAcross = wF.clone().multiplyScalar(0.85).addScaledVector(wR, -0.4);
     this.placeHand(this.hands.left, point(WEAPON.foregrip), lPrimary, lAcross,
       chestPos.clone().addScaledVector(body.right, -0.7).addScaledVector(UP, -0.7));
+  }
+
+  private crouch(amount: number, forward: Vector3): void {
+    const bone = (name: string) => this.retargeter.bones.get(name)!;
+    const right = new Vector3().crossVectors(forward, UP).normalize();
+    const legs = (['Left', 'Right'] as const).map((side) => {
+      const foot = bone(`${side}Foot`);
+      return { side, foot, at: foot.getWorldPosition(new Vector3()), rotation: worldQuaternion(foot, new Quaternion()) };
+    });
+
+    const hips = bone('Hips');
+    const position = hips.getWorldPosition(new Vector3())
+      .addScaledVector(UP, -CROUCH.drop * amount)
+      .addScaledVector(forward, -CROUCH.back * amount);
+    hips.position.copy(hips.parent!.worldToLocal(position));
+    hips.updateMatrixWorld(true);
+    // Lean the pelvis forward, then bring the chest most of the way back up.
+    rotateWorld(hips, this.q.setFromAxisAngle(right, -CROUCH.pelvisPitch * amount));
+    rotateWorld(bone('Spine1'), this.q.setFromAxisAngle(right, CROUCH.chestCounter * amount));
+
+    for (const { side, foot, at, rotation } of legs) {
+      const knee = bone(`${side}Leg`).getWorldPosition(new Vector3());
+      const splay = side === 'Left' ? -CROUCH.kneeSplay : CROUCH.kneeSplay;
+      const pole = knee.addScaledVector(forward, 1).addScaledVector(right, splay);
+      solveTwoBone(bone(`${side}UpLeg`), bone(`${side}Leg`), foot, at, pole);
+      setWorldQuaternion(foot, rotation);
+    }
   }
 
   private setWeaponWorld(position: Vector3, rotation: Quaternion, scale: number): void {
