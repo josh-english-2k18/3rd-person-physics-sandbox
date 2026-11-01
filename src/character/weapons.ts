@@ -22,7 +22,11 @@ export interface GripStyle {
 }
 
 export interface Stance {
-  /** Low ready: where the anchor point rests relative to the chest, in torso axes (right, up, forward). */
+  /**
+   * Where the anchor (butt pad / tube underside) rests relative to the right shoulder joint, in
+   * torso axes (right, up, forward), when aiming and at low ready.
+   */
+  pocketAim: Vector3;
   pocketReady: Vector3;
   /** Lowered carry: muzzle pitched (negative = down) and yawed (positive = left) off the body. */
   readyPitch: number;
@@ -36,11 +40,13 @@ export interface Stance {
   rightElbow: Vector3;
   leftElbow: Vector3;
   /**
-   * Aiming is a cheek weld: the sight sits `eyeRelief` in front of the eye, which is offset from the
-   * head bone by `eye` (torso axes: right, up, forward).
+   * Cheek weld: when aiming, the head turns so the eye (offset `eye` from the head bone, torso
+   * axes) sits on the sight line `eyeRelief` behind the sight.
    */
   eye: Vector3;
   eyeRelief: number;
+  /** Aiming lean (radians): chest tipped toward the firing shoulder (`side`) and forward. */
+  lean: { side: number; forward: number };
   /** Recoil kick: radians of muzzle climb and meters of push-back at full recoil. */
   recoilPitch: number;
   recoilPush: number;
@@ -117,7 +123,8 @@ export const WEAPONS: Record<WeaponDef['id'], WeaponDef> = {
     },
     stance: {
       // Both arms at ~65-80% of reach and 4+ cm clear of the torso (Soldier.debug).
-      pocketReady: new Vector3(0.14, 0.1, 0.0),
+      pocketAim: new Vector3(-0.12, 0.03, 0.07),
+      pocketReady: new Vector3(-0.06, -0.06, 0.06),
       readyPitch: -0.35,
       readyYaw: 0.45,
       bladeAim: 0.5,
@@ -126,8 +133,8 @@ export const WEAPONS: Record<WeaponDef['id'], WeaponDef> = {
       rightElbow: new Vector3(1.0, -0.3, -0.1),
       leftElbow: new Vector3(-0.35, -1.0, 0.2),
       eye: new Vector3(0.035, 0.07, 0.09),
-      // Red dot: eye relief is free, so it is set to land the butt in the shoulder pocket.
-      eyeRelief: 0.26,
+      eyeRelief: 0.12,
+      lean: { side: 0.12, forward: 0.08 },
       recoilPitch: 0.12,
       recoilPush: 0.05,
     },
@@ -161,7 +168,8 @@ export const WEAPONS: Record<WeaponDef['id'], WeaponDef> = {
       rear: new Vector3(0, 0.047, -0.5),
     },
     stance: {
-      pocketReady: new Vector3(0.17, 0.18, 0.04),
+      pocketAim: new Vector3(-0.02, 0.07, 0.0),
+      pocketReady: new Vector3(-0.02, 0.06, 0.02),
       // Carried on the shoulder, muzzle just below level.
       readyPitch: -0.12,
       readyYaw: 0.05,
@@ -171,7 +179,8 @@ export const WEAPONS: Record<WeaponDef['id'], WeaponDef> = {
       rightElbow: new Vector3(0.9, -0.6, -0.1),
       leftElbow: new Vector3(-0.3, -1.0, 0.3),
       eye: new Vector3(0.035, 0.07, 0.09),
-      eyeRelief: 0.32,
+      eyeRelief: 0.12,
+      lean: { side: 0.12, forward: 0.06 },
       recoilPitch: 0.3,
       recoilPush: 0.08,
     },

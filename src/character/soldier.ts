@@ -30,6 +30,9 @@ const CROUCH = {
   kneeSplay: 0.18,
 };
 
+/** Most the neck / head turn to meet the sight line (radians), so the face stays toward the target. */
+const CHEEK_LIMIT = 0.3;
+
 /** Torso capsule radius (vest included) for keeping the arms out of the body. */
 const TORSO_RADIUS = 0.17;
 
@@ -260,6 +263,10 @@ export class Soldier {
     for (let i = 0; i < this.spine.length; i++) {
       rotateWorld(this.spine[i], this.q.setFromAxisAngle(sideAxis, pitch * AIM.spineShare[i] * 0.8));
     }
+    // Lean into the gun: the chest tips toward the firing shoulder and a little forward, which
+    // brings the head over the stock (the cheek weld then only has to tilt it slightly).
+    rotateWorld(this.chest, this.q.setFromAxisAngle(facing, stance.lean.side * weight));
+    rotateWorld(this.chest, this.q.setFromAxisAngle(sideAxis, -stance.lean.forward * weight));
     // Head looks down the aim.
     rotateWorld(this.neck, this.q.setFromAxisAngle(sideAxis, pitch * 0.15));
     rotateWorld(this.head, this.q.setFromAxisAngle(sideAxis, pitch * 0.05));
@@ -289,21 +296,21 @@ export class Soldier {
     // Recoil: kick up and back.
     const weaponLeft = new Vector3(1, 0, 0).applyQuaternion(this.weaponQ);
     this.weaponQ.premultiply(this.q.setFromAxisAngle(weaponLeft, -aim.recoil * stance.recoilPitch));
-    // Low ready: the anchor (butt / tube) rests at a pocket on the body. Aiming: cheek weld, with
-    // the sight just in front of the eye, looking down the aim.
-    const anchorWorld = pocket(stance.pocketReady);
-    const readyPos = def.points.anchor.clone().applyQuaternion(this.weaponQ).negate().add(anchorWorld);
-    const eye = this.head.getWorldPosition(new Vector3())
-      .addScaledVector(body.right, stance.eye.x)
-      .addScaledVector(UP, stance.eye.y)
-      .addScaledVector(body.forward, stance.eye.z);
-    const sightWorld = eye.addScaledVector(aim.direction, stance.eyeRelief);
-    const aimPos = def.points.sight.clone().applyQuaternion(this.weaponQ).negate().add(sightWorld);
-    this.weaponPos.lerpVectors(readyPos, aimPos, weight);
+    // The anchor (butt pad / tube underside) sits in the shoulder pocket, just inboard of the right
+    // shoulder joint, in both poses; aiming then brings the head down onto the stock (below).
+    const shoulder = this.retargeter.bones.get('RightArm')!.getWorldPosition(new Vector3());
+    const atShoulder = (offset: Vector3) =>
+      shoulder.clone()
+        .addScaledVector(body.right, offset.x)
+        .addScaledVector(UP, offset.y)
+        .addScaledVector(body.forward, offset.z);
+    const anchorWorld = atShoulder(new Vector3().lerpVectors(stance.pocketReady, stance.pocketAim, weight));
     // While swapping, the weapon dips low before coming up; recoil pushes it back.
-    this.weaponPos.addScaledVector(UP, -(1 - raise) * 0.25);
-    this.weaponPos.addScaledVector(new Vector3(0, 0, 1).applyQuaternion(this.weaponQ), -aim.recoil * stance.recoilPush);
+    anchorWorld.addScaledVector(UP, -(1 - raise) * 0.25);
+    anchorWorld.addScaledVector(new Vector3(0, 0, 1).applyQuaternion(this.weaponQ), -aim.recoil * stance.recoilPush);
+    this.weaponPos.copy(def.points.anchor).applyQuaternion(this.weaponQ).negate().add(anchorWorld);
     this.setWorld(group, this.weaponPos, this.weaponQ);
+    this.cheekWeld(def, weight, body.right, body.forward);
 
     // The other weapon rides diagonally across the back.
     for (const other of Object.values(this.held)) {
@@ -322,6 +329,53 @@ export class Soldier {
     const point = (local: Vector3) => local.clone().applyQuaternion(this.weaponQ).add(this.weaponPos);
     this.placeHand(this.hands.right, def.grips.right, point(def.points.grip), wF, wU, wR, pocket(stance.rightElbow));
     this.placeHand(this.hands.left, def.grips.left, point(def.points.foregrip), wF, wU, wR, pocket(stance.leftElbow));
+  }
+
+  /** The eye, from the head bone and the stance's eye offset (torso axes). */
+  private eyeWorld(def: WeaponDef, right: Vector3, forward: Vector3): Vector3 {
+    const { eye } = def.stance;
+    return this.head.getWorldPosition(new Vector3()).addScaledVector(right, eye.x).addScaledVector(UP, eye.y).addScaledVector(forward, eye.z);
+  }
+
+  /**
+   * Cheek weld: turn the neck and head so the eye drops onto the sight line, `eyeRelief` behind the
+   * sight, as a shooter lowers their head to the stock.
+   */
+  private cheekWeld(def: WeaponDef, weight: number, right: Vector3, forward: Vector3): void {
+    const aimDir = new Vector3(0, 0, 1).applyQuaternion(this.weaponQ);
+    const sight = def.points.sight.clone().applyQuaternion(this.weaponQ).add(this.weaponPos);
+    const desired = sight.clone().addScaledVector(aimDir, -def.stance.eyeRelief);
+    if (weight > 1e-3) {
+      for (const [joint, share] of [[this.neck, 0.6], [this.head, 1]] as const) {
+        const pivot = joint.getWorldPosition(new Vector3());
+        const from = this.eyeWorld(def, right, forward).sub(pivot);
+        const to = desired.clone().sub(pivot);
+        const turn = new Quaternion().setFromUnitVectors(from.normalize(), to.normalize());
+        const angle = 2 * Math.acos(Math.min(1, Math.abs(turn.w)));
+        const limited = Math.min(angle, CHEEK_LIMIT) / Math.max(angle, 1e-6);
+        rotateWorld(joint, new Quaternion().slerp(turn, share * weight * limited));
+      }
+    }
+    // Diagnostics: how far the eye is from the sight line, and the weapon's clearance from the torso.
+    const eye = this.eyeWorld(def, right, forward);
+    const toEye = eye.clone().sub(sight);
+    const eyeGap = toEye.addScaledVector(aimDir, -toEye.dot(aimDir)).length();
+    // The butt pad touches the shoulder by design; what must stay out of the body is the stock and grip.
+    const stock = [def.points.anchor.clone().lerp(def.points.grip, 0.5), def.points.grip].map((p) =>
+      p.clone().applyQuaternion(this.weaponQ).add(this.weaponPos),
+    );
+    this.weaponDebug = { eyeGap: +eyeGap.toFixed(3), clearance: +Math.min(...stock.map((p) => this.torsoDistance(p))).toFixed(3) };
+  }
+
+  /** Weapon placement diagnostics (eye to sight line, stock clearance from the torso), for tests. */
+  weaponDebug = { eyeGap: 0, clearance: 0 };
+
+  private torsoDistance(p: Vector3): number {
+    const hips = this.retargeter.bones.get('Hips')!.getWorldPosition(new Vector3());
+    const neck = this.neck.getWorldPosition(new Vector3());
+    const axis = neck.clone().sub(hips);
+    const t = Math.min(Math.max(p.clone().sub(hips).dot(axis) / axis.lengthSq(), 0), 1);
+    return p.distanceTo(hips.clone().addScaledVector(axis, t)) - TORSO_RADIUS;
   }
 
   private crouch(amount: number, forward: Vector3): void {
