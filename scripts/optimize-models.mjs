@@ -12,9 +12,10 @@ import sharp from 'sharp';
 
 const ROOT = resolve(import.meta.dirname, '..');
 const MODELS = [
-  { src: 'operator.glb', dst: 'operator.glb', maxTexture: 2048 },
-  { src: 'bullpup.glb', dst: 'bullpup.glb', maxTexture: 2048, weaponLength: 0.72 },
-  { src: 'launcher.glb', dst: 'launcher.glb', maxTexture: 2048, weaponLength: 1.0 },
+  // Hero assets are always near the camera: keep Tripo's full 4K maps.
+  { src: 'operator.glb', dst: 'operator.glb', maxTexture: 4096 },
+  { src: 'bullpup.glb', dst: 'bullpup.glb', maxTexture: 4096, weaponLength: 0.72 },
+  { src: 'launcher.glb', dst: 'launcher.glb', maxTexture: 4096, weaponLength: 1.0 },
 ];
 
 const io = new NodeIO().registerExtensions(ALL_EXTENSIONS);

@@ -19,7 +19,7 @@ Source GLBs live in `assets-src/models/` with attribution. Generated runtime ass
 - `npm test` runs the Vitest integration tests against the real model.
 
 ## Coding Style & Naming Conventions
-TypeScript with strict mode and 2-space indentation. Use classes for stateful systems (`MotionPlayer`, `Props`) and plain functions for math. Keep tuning constants in labeled objects near the top of each module (`RIG`, `AIM`, `MODES`, `LOOK`, `CARBINE`). Name files after their primary export. Coordinates are Y-up meters everywhere. A heading θ faces `(sin θ, 0, cos θ)`.
+TypeScript with strict mode and 2-space indentation. Use classes for stateful systems (`MotionPlayer`, `Props`) and plain functions for math. Keep tuning constants in labeled objects near the top of each module (`RIG`, `AIM`, `MODES`, `LOOK`, `CARBINE`). Name files after their primary export. Coordinates are Y-up meters everywhere. A heading θ faces `(sin θ, 0, cos θ)`. The sun is a cascaded shadow map (`CSM` in `src/render/renderer.ts`), so don't add a `DirectionalLight`. New lit materials join the cascades automatically, because the renderer sweeps the scene every 0.25 s.
 
 ## Testing Guidelines
 Run `npm test` after touching `src/motion/` or locomotion tuning. It guards gait quality (`gait.test.ts`: no shuffling or hopping) and responsiveness (start, stop and turn times). For visual or gameplay changes, run `npm run dev` and confirm the following:

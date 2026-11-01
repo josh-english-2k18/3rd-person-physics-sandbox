@@ -61,7 +61,7 @@ src/
   game/              input, camera rig, player character, weapon
   world/             Rapier wrapper, grey-box level, shootable props
   fx/                motion-preview holograms, particles, tracers/decals/flashes
-  render/            renderer + post stack (N8AO, bloom, ACES, SMAA), grid material
+  render/            renderer, cascaded shadows, post stack (N8AO, height fog, bloom, ACES, grade, SMAA)
   ui/                splash + HUD
   audio.ts           procedural WebAudio sound effects
 scripts/             fetch-assets.mjs, optimize-models.mjs, assets/ (AI asset generation)
@@ -83,6 +83,11 @@ The character, the bullpup rifle and the compact rocket launcher are all generat
 
 The scene is lit by an HDRI sky (Poly Haven, CC0). Its sun direction, sun colour and horizon fog are all read from the image, and the image also supplies the image-based lighting. Additional touches:
 
+- cascaded sun shadows (three 2048² cascades ending at 10, 40 and 150 m) with soft PCF penumbrae
+- exponential height fog that glows with sun inscattering when you look toward the sun
+- full-resolution ambient occlusion, plus the baked AO from each model's ORM texture
+- a filmic grade after ACES tone mapping: a gentle S-curve and warm highlights over cool shadows
+- the operator and weapons at their full 4K texture resolution
 - a fresnel rim light that lifts the operator off the background
 - a mesh muzzle flash, ejected brass and a laser sight
 - noise-shaded fire and smoke

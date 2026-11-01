@@ -115,6 +115,12 @@ export class Soldier {
         mesh.receiveShadow = true;
         const material = mesh.material as MeshStandardMaterial;
         material.envMapIntensity = envMapIntensity;
+        // Tripo packs occlusion, roughness and metalness into one ORM texture; glTF only wires up
+        // roughness/metalness, so use its red channel as the ambient-occlusion map too.
+        if (!material.aoMap && material.roughnessMap && material.roughnessMap === material.metalnessMap) {
+          material.aoMap = material.roughnessMap;
+          material.aoMapIntensity = 1;
+        }
         setAnisotropy(material, 8);
         addRimLight(material);
       });
