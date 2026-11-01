@@ -1,0 +1,16 @@
+{
+  "taskId": "7283126f-cb11-4d0e-816f-43ee2de25a8c",
+  "request": {
+    "input": "cc779b48-4486-4260-ba34-ff954700c137",
+    "model": "v3.0-20260909",
+    "rig_type": "biped",
+    "spec": "mixamo",
+    "out_format": "glb"
+  },
+  "check": {
+    "riggable": true,
+    "rig_type": "biped"
+  },
+  "credits": 25,
+  "seconds": 16
+}

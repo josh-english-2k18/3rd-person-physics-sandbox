@@ -1,0 +1,18 @@
+{
+  "model": "gpt-image-2.5-sunburst",
+  "size": "1536x1024",
+  "prompt": "A detailed replica prop of a compact modern shoulder-launched tube system for a film armory, in a clean product-shot view from its right side, rotated about 20 degrees toward the camera so its depth reads, front end pointing to the right. Original industrial design in the spirit of the Carl Gustaf M4: a ribbed carbon-composite tube in olive drab with black end caps and a flared rear venturi cone, a pistol grip with trigger guard under the middle of the tube, a second vertical grip toward the front, a padded shoulder rest on top behind the grip, a compact reflex sight on a short rail on the top-left, a yellow-and-black band near the front end. No strap, no sling, no loose parts. Realistic materials: matte composite, rubber, steel fittings, subtle wear.\n\nPhotoreal AAA game asset, physically based materials, crisp high-frequency detail, flat even studio lighting with no cast shadows, isolated on a transparent background, no text, no logos, no watermark, no ground plane.",
+  "usage": {
+    "input_tokens": 217,
+    "input_tokens_details": {
+      "image_tokens": 0,
+      "text_tokens": 217
+    },
+    "output_tokens": 1372,
+    "output_tokens_details": {
+      "image_tokens": 1372,
+      "text_tokens": 0
+    },
+    "total_tokens": 1589
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "taskId": "c88001ba-ec03-4307-8221-11ccf76dfd07",
+  "request": {
+    "model": "v3.1-20260211",
+    "texture": true,
+    "pbr": true,
+    "texture_quality": "detailed",
+    "geometry_quality": "detailed",
+    "texture_alignment": "original_image",
+    "face_limit": 60000
+  },
+  "credits": 60,
+  "seconds": 106
+}

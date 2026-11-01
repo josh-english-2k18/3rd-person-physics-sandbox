@@ -1,0 +1,18 @@
+{
+  "model": "gpt-image-2.5-sunburst",
+  "size": "1024x1536",
+  "prompt": "Full-body 3D character reference of a modern special forces operator, front view, perfectly symmetrical A-pose: standing straight, feet shoulder-width apart, arms held straight and angled about 45 degrees down and away from the body, hands open with relaxed slightly spread fingers, palms facing the thighs. Face fully covered by a black balaclava and wraparound ballistic glasses. High-cut ballistic helmet in ranger green with side rails, a folded-up night vision mount and a low-profile comms headset. Slim plate carrier in ranger green with a triple magazine placard, radio pouch and admin pouch; multicam combat shirt with rolled sleeves tucked into tactical gloves; multicam combat pants with integrated knee pads; slim battle belt with a drop-leg pouch on the right thigh; tan tactical boots. Athletic build, confident, battle-ready, believable military realism. No weapon, no sling, nothing in or near the hands, nothing between the arms and the body. Full body visible head to toe, centered, orthographic camera at chest height.\n\nPhotoreal AAA game asset, physically based materials, crisp high-frequency detail, flat even studio lighting with no cast shadows, isolated on a transparent background, no text, no logos, no watermark, no ground plane.",
+  "usage": {
+    "input_tokens": 256,
+    "input_tokens_details": {
+      "image_tokens": 0,
+      "text_tokens": 256
+    },
+    "output_tokens": 1372,
+    "output_tokens_details": {
+      "image_tokens": 1372,
+      "text_tokens": 0
+    },
+    "total_tokens": 1628
+  }
+}

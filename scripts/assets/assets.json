@@ -1,0 +1,24 @@
+{
+  "$comment": "AI-generated asset specs. Prompts follow image-to-3D practice: one subject, near-orthographic, flat shadowless light, transparent background, no text or effects. The character is posed for auto-rigging (A-pose, empty open hands).",
+  "style": "Photoreal AAA game asset, physically based materials, crisp high-frequency detail, flat even studio lighting with no cast shadows, isolated on a transparent background, no text, no logos, no watermark, no ground plane.",
+  "assets": {
+    "operator": {
+      "kind": "character",
+      "size": "1024x1536",
+      "heightMeters": 1.82,
+      "prompt": "Full-body 3D character reference of a modern special forces operator, front view, perfectly symmetrical A-pose: standing straight, feet shoulder-width apart, arms held straight and angled about 45 degrees down and away from the body, hands open with relaxed slightly spread fingers, palms facing the thighs. Face fully covered by a black balaclava and wraparound ballistic glasses. High-cut ballistic helmet in ranger green with side rails, a folded-up night vision mount and a low-profile comms headset. Slim plate carrier in ranger green with a triple magazine placard, radio pouch and admin pouch; multicam combat shirt with rolled sleeves tucked into tactical gloves; multicam combat pants with integrated knee pads; slim battle belt with a drop-leg pouch on the right thigh; tan tactical boots. Athletic build, confident, battle-ready, believable military realism. No weapon, no sling, nothing in or near the hands, nothing between the arms and the body. Full body visible head to toe, centered, orthographic camera at chest height."
+    },
+    "bullpup": {
+      "kind": "weapon",
+      "size": "1536x1024",
+      "lengthMeters": 0.72,
+      "prompt": "A modern bullpup assault rifle in a clean product-shot view from its right side, rotated about 20 degrees toward the camera so its depth reads, muzzle pointing to the right. Original design in the spirit of the Tavor X95 and FN F2000: compact polymer chassis in dark graphite with flat-dark-earth accents, pistol grip and trigger guard forward of the magazine, a curved translucent-smoke polymer magazine set behind the grip inside the stock, a short free-floating M-LOK handguard with a vertical foregrip, a compact holographic red-dot sight on a top picatinny rail, a stubby flash hider, an ejection port above the stock, ambidextrous charging handle, rubber butt pad. Crisp machined edges, subtle wear on edges, realistic materials (matte polymer, anodized aluminum, steel muzzle)."
+    },
+    "launcher": {
+      "kind": "weapon",
+      "size": "1536x1024",
+      "lengthMeters": 1.0,
+      "prompt": "A detailed replica prop of a compact modern shoulder-launched tube system for a film armory, in a clean product-shot view from its right side, rotated about 20 degrees toward the camera so its depth reads, front end pointing to the right. Original industrial design in the spirit of the Carl Gustaf M4: a ribbed carbon-composite tube in olive drab with black end caps and a flared rear venturi cone, a pistol grip with trigger guard under the middle of the tube, a second vertical grip toward the front, a padded shoulder rest on top behind the grip, a compact reflex sight on a short rail on the top-left, a yellow-and-black band near the front end. No strap, no sling, no loose parts. Realistic materials: matte composite, rubber, steel fittings, subtle wear."
+    }
+  }
+}

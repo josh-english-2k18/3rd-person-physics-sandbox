@@ -1,0 +1,18 @@
+{
+  "model": "gpt-image-2.5-sunburst",
+  "size": "1536x1024",
+  "prompt": "A modern bullpup assault rifle in a clean product-shot view from its right side, rotated about 20 degrees toward the camera so its depth reads, muzzle pointing to the right. Original design in the spirit of the Tavor X95 and FN F2000: compact polymer chassis in dark graphite with flat-dark-earth accents, pistol grip and trigger guard forward of the magazine, a curved translucent-smoke polymer magazine set behind the grip inside the stock, a short free-floating M-LOK handguard with a vertical foregrip, a compact holographic red-dot sight on a top picatinny rail, a stubby flash hider, an ejection port above the stock, ambidextrous charging handle, rubber butt pad. Crisp machined edges, subtle wear on edges, realistic materials (matte polymer, anodized aluminum, steel muzzle).\n\nPhotoreal AAA game asset, physically based materials, crisp high-frequency detail, flat even studio lighting with no cast shadows, isolated on a transparent background, no text, no logos, no watermark, no ground plane.",
+  "usage": {
+    "input_tokens": 223,
+    "input_tokens_details": {
+      "image_tokens": 0,
+      "text_tokens": 223
+    },
+    "output_tokens": 1372,
+    "output_tokens_details": {
+      "image_tokens": 1372,
+      "text_tokens": 0
+    },
+    "total_tokens": 1595
+  }
+}
