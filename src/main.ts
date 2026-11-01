@@ -1,5 +1,5 @@
 import { Clock, Vector2, Vector3 } from 'three';
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { GLTFLoader, type GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { Audio } from './audio';
 import { Soldier } from './character/soldier';
 import { CombatFx } from './fx/combat';
@@ -9,7 +9,8 @@ import { LaserSight, MuzzleFlash, ShellCasings } from './fx/weaponFx';
 import { CameraRig } from './game/cameraRig';
 import { Input } from './game/input';
 import { PlayerCharacter } from './game/player';
-import { Weapon } from './game/weapon';
+import { Arsenal } from './game/weapon';
+import { WEAPONS, type WeaponDef } from './character/weapons';
 import { parseBvh, type Clip } from './motion/bvh';
 import { MotionBricksEngine, type LoadProgress } from './motion/engine';
 import { LocomotionController, TARGET_CLIPS } from './motion/locomotion';
@@ -99,14 +100,18 @@ async function main(): Promise<void> {
   let engine: MotionBricksEngine;
   let clips: Map<string, Clip>;
   let gltf;
+  let weaponModels: Record<WeaponDef['id'], GLTF>;
   try {
     splash.progress(0.02, 'Loading motion clips…');
     const assets = Promise.all([
       loadClips(),
       new GLTFLoader().loadAsync(ASSETS.operator),
+      Promise.all(Object.values(WEAPONS).map((w) => new GLTFLoader().loadAsync(w.url))),
       renderer.useHdri(ASSETS.sky).catch((e) => console.warn('HDRI sky unavailable; using the procedural sky', e)),
     ]);
-    [clips, gltf] = await assets;
+    let weaponList: GLTF[];
+    [clips, gltf, weaponList] = await assets;
+    weaponModels = Object.fromEntries(Object.keys(WEAPONS).map((id, i) => [id, weaponList[i]])) as Record<WeaponDef['id'], GLTF>;
     const skeleton = clips.get(TARGET_CLIPS.idle)!.skeleton;
     splash.progress(0.05, 'Downloading MotionBricks SOMA model…');
     engine = await MotionBricksEngine.load(ASSETS.model, skeleton, (p: LoadProgress) => {
@@ -124,21 +129,33 @@ async function main(): Promise<void> {
   const idleClip = clips.get(TARGET_CLIPS.idle)!;
   const skeleton = idleClip.skeleton;
   const reference = idleClip.frames[0];
-  const soldier = new Soldier(gltf, skeleton, reference, reference.pos[1]);
+  const soldier = new Soldier(gltf, weaponModels, skeleton, reference, reference.pos[1]);
   renderer.scene.add(soldier.root);
   const motion = new MotionPlayer(engine, skeleton, reference);
   const locomotion = new LocomotionController(skeleton, motion, clips);
   const spawnHeading = Math.PI; // face -Z, toward the arena
   const player = new PlayerCharacter(physics, motion, soldier, locomotion, level.spawn, spawnHeading);
   player.onFootstep = (at, weight) => audio.footstep(at, weight);
-  const weapon = new Weapon(physics, props, particles, fx, audio);
+  const weapon = new Arsenal(physics, props, particles, fx, audio);
   weapon.onHit = (surface) => surface && hud.hit();
+  renderer.scene.add(weapon.group);
+  const equip = (id: WeaponDef['id']) => {
+    if (!soldier.setWeapon(id)) return;
+    weapon.switchTo(id);
+    audio.weaponSwap();
+  };
   const muzzleFlash = new MuzzleFlash(soldier.muzzle);
   const shells = new ShellCasings();
   const laser = new LaserSight();
   shells.onLand = (at) => audio.shell(at);
   renderer.scene.add(shells.mesh, laser.group);
-  weapon.onShot = () => {
+  weapon.onShot = (profile) => {
+    if (profile.projectile === 'rocket') {
+      muzzleFlash.trigger(2.4);
+      rig.shake(0.45);
+      renderer.shock = Math.max(renderer.shock, 0.5);
+      return;
+    }
     muzzleFlash.trigger();
     shells.eject(soldier.port.getWorldPosition(new Vector3()), soldier.weaponRight, soldier.weaponUp, soldier.weaponForward, player.position.y);
   };
@@ -185,6 +202,9 @@ async function main(): Promise<void> {
     if (input.tapped('preview')) preview.visible = !preview.visible;
     if (input.tapped('hud')) hud.visible = !hud.visible;
     if (input.tapped('reload')) weapon.reload();
+    if (input.tapped('weapon1')) equip('bullpup');
+    if (input.tapped('weapon2')) equip('launcher');
+    if (input.wheel !== 0) equip(weapon.active === 'bullpup' ? 'launcher' : 'bullpup');
     if (input.tapped('crouch')) crouched = !crouched;
     if (active && input.tapped('jump') && player.jump()) crouched = false;
     if (input.held('sprint') && input.held('forward')) crouched = false;
@@ -212,7 +232,16 @@ async function main(): Promise<void> {
       recoil: weapon.recoil,
     });
 
-    const kick = weapon.update(dt, firing && aiming, input.aim, rig.position, rig.direction(new Vector3()), soldier.muzzleWorld, player.collider);
+    const kick = weapon.update(
+      dt,
+      firing && aiming && !soldier.swapping,
+      input.aim,
+      rig.position,
+      rig.direction(new Vector3()),
+      soldier.muzzleWorld,
+      soldier.rear.getWorldPosition(new Vector3()),
+      player.collider,
+    );
     if (kick) {
       rig.kick(kick.pitch, kick.yaw);
       rig.shake(0.06);
@@ -241,7 +270,8 @@ async function main(): Promise<void> {
     const laserFrom = soldier.laser.getWorldPosition(new Vector3());
     const laserDir = soldier.weaponForward;
     const laserHit = physics.world.castRay(new RAPIER.Ray(laserFrom, laserDir), 150, true, undefined, undefined, player.collider);
-    laser.update(dt, active && input.aim, laserFrom, laserFrom.clone().addScaledVector(laserDir, laserHit ? laserHit.timeOfImpact : 150));
+    const hasLaser = Boolean(soldier.activeWeapon.points.laser) && !soldier.swapping;
+    laser.update(dt, active && input.aim && hasLaser, laserFrom, laserFrom.clone().addScaledVector(laserDir, laserHit ? laserHit.timeOfImpact : 150));
 
     const generation = motion.lastGeneration;
     if (generation) preview.setGeneration(generation);
@@ -261,7 +291,8 @@ async function main(): Promise<void> {
         speed: status.speed,
         preview: preview.visible,
       },
-      weapon.ammo,
+      weapon.active,
+      weapon.magazine,
       weapon.reloading > 0,
       weapon.spread,
       renderer.camera.fov,

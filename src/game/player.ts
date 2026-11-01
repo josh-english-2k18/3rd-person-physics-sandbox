@@ -222,7 +222,7 @@ export class PlayerCharacter {
       bodyFollow: this.bodyFollow,
       recoil: input.recoil,
       crouch: this.crouchWeight * this.crouchWeight * (3 - 2 * this.crouchWeight),
-    });
+    }, dt);
 
     // Footsteps on heel strikes.
     for (const c of [0, 2]) {

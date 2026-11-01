@@ -84,6 +84,10 @@ canvas#game { display: block; width: 100vw; height: 100vh; }
 .ammo .bar i { width: 3px; height: 12px; background: var(--ink); opacity: 0.85; }
 .ammo .bar i.spent { opacity: 0.15; }
 .ammo .reloading { color: var(--amber); }
+.ammo .bar.chunky i { width: 14px; height: 14px; border-radius: 2px; }
+.ammo .slots { display: flex; gap: 6px; justify-content: flex-end; margin-bottom: 10px; }
+.ammo .slots span { font: 700 11px/1 var(--mono); padding: 4px 7px; border: 1px solid var(--line); border-radius: 3px; color: var(--muted); }
+.ammo .slots span.on { color: #061016; background: var(--accent); border-color: var(--accent); }
 
 .hint { position: absolute; left: 26px; bottom: 24px; font: 500 11px/1.9 var(--mono); color: var(--muted); transition: opacity 1.2s ease; }
 .hint kbd { color: var(--ink); font: inherit; padding: 1px 5px; border: 1px solid var(--line); border-radius: 3px; margin-right: 6px; }

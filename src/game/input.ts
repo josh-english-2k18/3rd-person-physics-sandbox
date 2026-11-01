@@ -9,6 +9,8 @@ export const KEYS = {
   crouch: ['KeyC', 'ControlLeft'],
   reload: ['KeyR'],
   jump: ['Space'],
+  weapon1: ['Digit1'],
+  weapon2: ['Digit2'],
   preview: ['KeyG'],
   hud: ['KeyH'],
 };
@@ -18,6 +20,8 @@ export class Input {
   private readonly pressed = new Set<string>();
   mouseX = 0;
   mouseY = 0;
+  /** Mouse wheel steps this frame (positive = down). */
+  wheel = 0;
   fire = false;
   aim = false;
   locked = false;
@@ -43,6 +47,9 @@ export class Input {
       if (e.button === 2) this.aim = false;
     });
     element.addEventListener('contextmenu', (e) => e.preventDefault());
+    element.addEventListener('wheel', (e) => {
+      if (this.locked) this.wheel += Math.sign(e.deltaY);
+    }, { passive: true });
     document.addEventListener('mousemove', (e) => {
       if (!this.locked) return;
       this.mouseX += e.movementX;
@@ -70,6 +77,6 @@ export class Input {
   /** Call at the end of each frame. */
   endFrame(): void {
     this.pressed.clear();
-    this.mouseX = this.mouseY = 0;
+    this.mouseX = this.mouseY = this.wheel = 0;
   }
 }

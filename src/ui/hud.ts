@@ -1,4 +1,4 @@
-import { CARBINE } from '../game/weapon';
+import { WEAPONS } from '../character/weapons';
 
 /** DOM overlays: the loading/deploy splash, pause screen, and the in-game HUD. */
 
@@ -11,6 +11,7 @@ const CONTROLS = [
   ['C', 'Crouch (toggle)'],
   ['Space', 'Jump / vault'],
   ['R', 'Reload'],
+  ['1 / 2', 'Bullpup / launcher'],
   ['G', 'Motion preview'],
 ];
 
@@ -99,6 +100,8 @@ export class Hud {
   private readonly hitmarker: HTMLDivElement;
   private readonly ammoCount: HTMLDivElement;
   private readonly ammoBar: HTMLDivElement;
+  private readonly weaponName: HTMLDivElement;
+  private shownWeapon = '';
   private readonly hint: HTMLDivElement;
   private hitTimer = 0;
   private lastGeneration = -1;
@@ -122,7 +125,7 @@ export class Hud {
       </div>
       <div class="crosshair"><i class="dot"></i><i class="h l"></i><i class="h r"></i><i class="v t"></i><i class="v b"></i></div>
       <div class="hitmarker"></div>
-      <div class="ammo"><div class="count">30<small>/ ∞</small></div><div class="bar"></div><div class="weapon">${CARBINE.name}</div></div>
+      <div class="ammo"><div class="slots">${Object.values(WEAPONS).map((w, i) => `<span data-slot="${w.id}">${i + 1}</span>`).join('')}</div><div class="count">30<small>/ ∞</small></div><div class="bar"></div><div class="weapon"></div></div>
       <div class="hint">${CONTROLS.map(([k, v]) => `<div><kbd>${k}</kbd>${v}</div>`).join('')}</div>`;
     parent.appendChild(this.root);
     this.root.querySelectorAll<HTMLElement>('[data-f]').forEach((el) => (this.fields[el.dataset.f!] = el));
@@ -131,7 +134,7 @@ export class Hud {
     this.hitmarker = this.root.querySelector('.hitmarker')!;
     this.ammoCount = this.root.querySelector('.ammo .count')!;
     this.ammoBar = this.root.querySelector('.ammo .bar')!;
-    this.ammoBar.innerHTML = '<i></i>'.repeat(CARBINE.magazine);
+    this.weaponName = this.root.querySelector('.ammo .weapon')!;
     this.hint = this.root.querySelector('.hint')!;
     setTimeout(() => this.hint.classList.add('faded'), 12000);
   }
@@ -148,7 +151,15 @@ export class Hud {
     this.hitTimer = 0.12;
   }
 
-  update(dt: number, stats: MotionStats, ammo: number, reloading: boolean, spread: number, fov: number): void {
+  update(dt: number, stats: MotionStats, weapon: keyof typeof WEAPONS, ammo: number, reloading: boolean, spread: number, fov: number): void {
+    if (weapon !== this.shownWeapon) {
+      this.shownWeapon = weapon;
+      const { fire } = WEAPONS[weapon];
+      this.weaponName.textContent = fire.name;
+      this.ammoBar.innerHTML = '<i></i>'.repeat(fire.magazine);
+      this.ammoBar.classList.toggle('chunky', fire.magazine < 5);
+      this.root.querySelectorAll<HTMLElement>('[data-slot]').forEach((el) => el.classList.toggle('on', el.dataset.slot === weapon));
+    }
     // Crosshair gap follows the actual spread cone.
     const px = Math.max(4, (Math.tan(spread) / Math.tan(((fov / 2) * Math.PI) / 180)) * (window.innerHeight / 2));
     const [, l, r, t, b] = Array.from(this.crosshair.children) as HTMLElement[];

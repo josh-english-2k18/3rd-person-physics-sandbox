@@ -118,6 +118,7 @@ export class ParticleSystem {
         varying float vAge;
         varying float vSeed;
         varying float vKind;
+        varying float vNear;
         void main() {
           vUv = uv;
           vColor = aColor;
@@ -126,6 +127,8 @@ export class ParticleSystem {
           vSeed = aExtra.x;
           vKind = aExtra.y;
           vec4 center = viewMatrix * vec4(aOffset, 1.0);
+          // Fade puffs that would fill the screen (the camera sits just behind the weapon).
+          vNear = smoothstep(0.35, 0.35 + aParams.x * 2.5 + 1.2, -center.z);
           vec2 p = position.xy * aParams.x;
           vec2 q;
           if (aParams.z > 0.0) {
@@ -149,6 +152,7 @@ export class ParticleSystem {
         varying float vAge;
         varying float vSeed;
         varying float vKind;
+        varying float vNear;
         ${NOISE}
         vec3 fireRamp(float t) {
           vec3 c = mix(vec3(4.0, 3.4, 2.4), vec3(3.2, 1.5, 0.35), smoothstep(0.0, 0.25, t));
@@ -160,7 +164,7 @@ export class ParticleSystem {
           float r = length(d);
           if (vKind < 1.5) {
             // glow / spark
-            float a = exp(-r * r * 4.0) * vAlpha;
+            float a = exp(-r * r * 4.0) * vAlpha * vNear;
             if (a < 0.003) discard;
             gl_FragColor = vec4(vColor * a, 1.0);
             return;
@@ -169,13 +173,13 @@ export class ParticleSystem {
           float body = smoothstep(1.0, 0.25, r + (n - 0.5) * 0.9);
           if (vKind < 2.5) {
             // fire: erodes from the edges as it ages
-            float a = smoothstep(0.15 + vAge * 0.7, 0.9, body * (0.6 + n * 0.8)) * vAlpha;
+            float a = smoothstep(0.15 + vAge * 0.7, 0.9, body * (0.6 + n * 0.8)) * vAlpha * vNear;
             if (a < 0.003) discard;
             gl_FragColor = vec4(fireRamp(vAge) * vColor * a, 1.0);
             return;
           }
           // smoke: soft, billowy, lit from above
-          float a = body * smoothstep(0.0, 0.5, n + 0.15) * vAlpha;
+          float a = body * smoothstep(0.0, 0.5, n + 0.15) * vAlpha * vNear;
           if (a < 0.003) discard;
           float light = mix(0.62, 1.18, clamp(vUv.y * 0.8 + n * 0.4, 0.0, 1.0));
           gl_FragColor = vec4(vColor * light, a);
@@ -357,7 +361,7 @@ export class Particles {
 
   explosion(point: Vector3): void {
     // White-hot core flash.
-    this.glow.spawn({ position: point.clone(), velocity: new Vector3(), color: new Color(10, 8, 6), size: 6, grow: 1.4, life: 0.14 });
+    this.glow.spawn({ position: point.clone(), velocity: new Vector3(), color: new Color(5, 4, 3), size: 5, grow: 1.4, life: 0.12 });
     // Rolling fireball: big noisy fire puffs that rise and burn out.
     for (let i = 0; i < 26; i++) {
       this.glow.spawn({

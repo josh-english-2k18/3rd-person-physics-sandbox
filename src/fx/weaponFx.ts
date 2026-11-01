@@ -108,11 +108,11 @@ export class MuzzleFlash {
     muzzle.add(this.group);
   }
 
-  trigger(): void {
-    this.timer = 0.035;
+  trigger(size = 1): void {
+    this.timer = 0.035 * Math.sqrt(size);
     this.group.rotation.z = Math.random() * Math.PI * 2;
-    const s = 0.8 + Math.random() * 0.45;
-    this.group.scale.set(s, s, 0.7 + Math.random() * 0.6);
+    const s = (0.8 + Math.random() * 0.45) * size;
+    this.group.scale.set(s, s, (0.7 + Math.random() * 0.6) * size);
     this.sides.forEach((side, i) => (side.visible = Math.random() > 0.15 || i === 0));
   }
 

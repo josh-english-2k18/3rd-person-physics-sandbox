@@ -134,6 +134,24 @@ export class Audio {
     this.tone(t, 0.12, 180, 60, 0.4 * a, 'triangle');
   }
 
+  /** Launcher: a hard pop, a rushing whoosh and the backblast roar. */
+  rocketLaunch(): void {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    this.noiseBurst(t, 0.08, 'highpass', 900, 0.7, 1.0);
+    this.tone(t, 0.35, 110, 38, 1.1);
+    this.noiseBurst(t, 1.1, 'lowpass', 2400, 0.8, 0.9, 260);
+    this.noiseBurst(t + 0.05, 1.6, 'bandpass', 900, 0.5, 0.35, 180);
+  }
+
+  /** Swapping weapons: sling and handling rattle. */
+  weaponSwap(): void {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    this.noiseBurst(t, 0.05, 'bandpass', 1800, 3, 0.3);
+    this.noiseBurst(t + 0.18, 0.06, 'bandpass', 2600, 4, 0.35);
+  }
+
   /** Brass casing hitting the floor. */
   shell(at: Vector3): void {
     if (!this.ctx) return;

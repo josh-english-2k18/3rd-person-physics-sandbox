@@ -70,8 +70,8 @@ export function frameQuaternion(primary: Vector3, secondary: Vector3, out = new 
 }
 
 /**
- * A two-bone limb with a hinge joint (elbow / knee), measured once from a bind pose in which the
- * joint is bent. Solving keeps the hinge anatomical: the upper bone is twisted so the middle joint
+ * A two-bone limb with a hinge joint (elbow / knee), measured once from the bind pose (from the bend
+ * when the joint is bent, otherwise from a supplied flexion direction). Solving keeps the hinge anatomical: the upper bone is twisted so the middle joint
  * flexes about its own axis instead of bending sideways (which crumples the mesh).
  */
 export interface HingeChain {
@@ -87,11 +87,16 @@ export interface HingeChain {
   lowerHinge: Vector3;
 }
 
-export function measureHingeChain(upper: Bone, lower: Bone, end: Bone): HingeChain {
+export function measureHingeChain(upper: Bone, lower: Bone, end: Bone, flexToward?: Vector3): HingeChain {
   const s = upper.getWorldPosition(new Vector3());
   const e = lower.getWorldPosition(new Vector3());
   const w = end.getWorldPosition(new Vector3());
-  const hinge = new Vector3().crossVectors(e.clone().sub(s), w.clone().sub(e)).normalize();
+  const d1 = e.clone().sub(s).normalize();
+  const d2 = w.clone().sub(e).normalize();
+  // A bind pose with a straight limb (T/A-pose) doesn't reveal the hinge: fall back to the
+  // anatomical flexion direction (`flexToward`, e.g. the body's forward for elbows).
+  const bent = d1.angleTo(d2) > 0.25;
+  const hinge = (bent || !flexToward ? new Vector3().crossVectors(d1, d2) : new Vector3().crossVectors(d1, flexToward)).normalize();
   const toLocal = (bone: Bone, v: Vector3) => v.clone().applyQuaternion(worldQuaternion(bone).invert()).normalize();
   return {
     upper,
