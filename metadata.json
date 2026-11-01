@@ -1,15 +1,31 @@
 {
   "name": "MotionBricks Range",
-  "description": "A third-person shooter prototype whose operator is animated live, in the browser, by NVIDIA MotionBricks (SOMA model via onnxruntime-web), with a holographic preview of the generated motion, an Unreal-style grey-box level, and destructible physics props.",
+  "description": "A third-person shooter prototype whose operator is animated live, in the browser, by NVIDIA MotionBricks (SOMA model via onnxruntime-web), with a holographic preview of the generated motion, a Tripo-generated special forces operator with a bullpup rifle and rocket launcher, an Unreal-style grey-box level, and destructible physics props.",
   "requestFramePermissions": [],
   "assets": [
     {
-      "path": "assets-src/models/swat_operator.glb",
-      "title": "S.W.A.T. Operator",
-      "author": "Mateusz Woliński (https://sketchfab.com/jeandiz)",
-      "license": "CC-BY-4.0",
-      "source": "https://sketchfab.com/3d-models/swat-operator-9e82fabf26194896b5ad4a364d864eab",
-      "notes": "Character and its carbine; optimized into public/models/operator.glb by scripts/optimize-models.mjs."
+      "path": "assets-src/models/operator.glb",
+      "title": "Special forces operator",
+      "author": "Generated for this project (OpenAI GPT Image reference -> Tripo 3D v3.1 mesh -> Tripo v3.0 auto-rig, Mixamo naming)",
+      "license": "Project-owned generated asset (Tripo / OpenAI output terms)",
+      "source": "scripts/assets/generate.mjs; prompt and task records in assets-src/models/reference/",
+      "notes": "Optimized into public/models/operator.glb by scripts/optimize-models.mjs."
+    },
+    {
+      "path": "assets-src/models/bullpup.glb",
+      "title": "VX-9 bullpup rifle",
+      "author": "Generated for this project (OpenAI GPT Image -> Tripo 3D v3.1)",
+      "license": "Project-owned generated asset (Tripo / OpenAI output terms)",
+      "source": "scripts/assets/generate.mjs",
+      "notes": "Baked to 0.72 m, muzzle +Z, in public/models/bullpup.glb."
+    },
+    {
+      "path": "assets-src/models/launcher.glb",
+      "title": "M7 launcher",
+      "author": "Generated for this project (OpenAI GPT Image -> Tripo 3D v3.1)",
+      "license": "Project-owned generated asset (Tripo / OpenAI output terms)",
+      "source": "scripts/assets/generate.mjs",
+      "notes": "Baked to 1.0 m, muzzle +Z, in public/models/launcher.glb."
     },
     {
       "path": "public/motionbricks/mmm_v6_soma_fp16.onnx",

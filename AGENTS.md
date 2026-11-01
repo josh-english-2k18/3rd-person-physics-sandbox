@@ -32,5 +32,15 @@ Appending `?test` skips pointer lock and exposes `window.__game` for automated r
 ## Commit & Pull Request Guidelines
 Keep commits focused and write subjects in the present-tense imperative, under 72 characters. Describe observable behavior changes in the body. In PRs, note new dependencies or asset sources and include screenshots or clips for visual or motion changes.
 
+## Generating Assets
+New characters and weapons follow `scripts/assets/`:
+
+1. Write a prompt in `assets.json`.
+2. Run `npm run assets:generate -- image|model|rig --ids <id>`. Keys come from `.env` or from the file named by `ASSET_ENV_FILE`; Tripo uses the global `openapi.tripo3d.ai` host.
+3. Review the candidates with `tools/asset-viewer.html`.
+4. Promote the pick into `assets-src/models/` along with its `reference/` records, and add it to `optimize-models.mjs`.
+5. For a weapon, measure its points with `?measure=1` and add an entry to `src/character/weapons.ts`.
+6. Tune the stance until `Soldier.debug` shows both arms at 55–90% of reach and clear of the torso.
+
 ## Assets & Licensing
-Preserve upstream attribution: the operator is CC-BY-4.0, and the MotionBricks model and clips are under NVIDIA's licenses and are never committed. Record new external assets in `metadata.json` and `assets-src/models/README.md`.
+The operator and weapons are project-generated (Tripo/OpenAI output). The MotionBricks model and clips are under NVIDIA's licenses and are never committed; the HDRI is CC0. Record new external assets in `metadata.json` and `assets-src/models/README.md`.

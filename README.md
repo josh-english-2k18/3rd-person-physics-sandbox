@@ -1,6 +1,6 @@
 # MotionBricks Range
 
-A third-person shooter prototype whose special-ops operator is animated **live, in the browser** by [NVIDIA MotionBricks](https://github.com/NVlabs/motionbricks), a 200M-parameter generative motion model. Everything runs on the page: the ONNX model runs on WebGPU (with a WASM fallback), physics runs on Rapier, and rendering uses three.js. There is no server.
+A third-person shooter prototype whose special forces operator is animated **live, in the browser** by [NVIDIA MotionBricks](https://github.com/NVlabs/motionbricks), a 200M-parameter generative motion model. Everything runs on the page: the ONNX model runs on WebGPU (with a WASM fallback), physics runs on Rapier, and rendering uses three.js. There is no server.
 
 ![The operator sprinting, with MotionBricks' generated future motion drawn as holograms](./screenshot.png)
 
@@ -26,6 +26,7 @@ Use a recent Chromium browser for WebGPU. Other browsers fall back to multithrea
 | `C` | Crouch toggle (combat crouch; walk or aim-walk while crouched) |
 | `Space` | Jump, or vault a low obstacle ahead (0.25–1.05 m) |
 | `R` | Reload |
+| `1` / `2` / wheel | Bullpup rifle / rocket launcher |
 | `G` | Toggle the motion preview |
 | `H` | Toggle the HUD |
 
@@ -56,17 +57,27 @@ The code in `src/motion/` is a TypeScript port of the MotionBricks SOMA runtime.
 src/
   main.ts            loading, wiring, frame loop
   motion/            MotionBricks port: BVH, skeleton math, engine, playback, locomotion
-  character/         retargeting, IK, the operator + weapon handling
+  character/         retargeting, IK, the operator, weapon definitions (grips, stances, fire)
   game/              input, camera rig, player character, weapon
   world/             Rapier wrapper, grey-box level, shootable props
   fx/                motion-preview holograms, particles, tracers/decals/flashes
   render/            renderer + post stack (N8AO, bloom, ACES, SMAA), grid material
   ui/                splash + HUD
   audio.ts           procedural WebAudio sound effects
-scripts/             fetch-assets.mjs, optimize-models.mjs
+scripts/             fetch-assets.mjs, optimize-models.mjs, assets/ (AI asset generation)
+tools/               asset-viewer.html (review / measure GLBs)
 assets-src/models/   source GLB (+ attribution)
 public/              generated: models/, motionbricks/, hdri/ (gitignored)
 ```
+
+## The operator and his weapons
+
+The character, the bullpup rifle and the compact rocket launcher are all generated for this project. Each starts as an AI reference image, becomes a Tripo 3D mesh, and the character is then auto-rigged by Tripo. See `scripts/assets/generate.mjs` and `assets-src/models/README.md`. The operator holds whichever weapon is out and slings the other across his back:
+
+- **Rifle:** the cheek weld puts the optic in front of his eye.
+- **Launcher:** the tube rests on his shoulder.
+- **Grips:** two-bone IK flexes each elbow about its real hinge and keeps both hands on the grips, with fingers curled around them.
+- **Launcher rockets:** a smoke trail and a backblast, and an explosion on impact that sets off barrels nearby.
 
 ## Look
 
@@ -85,5 +96,5 @@ The scene is lit by an HDRI sky (Poly Haven, CC0). Its sun direction, sun colour
 
 - Code: MIT, see [`LICENSE`](./LICENSE).
 - MotionBricks models: [NVIDIA Open Model Agreement](https://www.nvidia.com/en-us/agreements/enterprise-software/nvidia-open-model-agreement/). The sample BVH clips are under the NVIDIA Sample Data Evaluation License, for evaluation only. Both are downloaded by `npm run setup` and are not committed.
-- The operator model is "S.W.A.T. Operator" by Mateusz Woliński, CC-BY-4.0. See [`assets-src/models/README.md`](./assets-src/models/README.md) and [`metadata.json`](./metadata.json).
+- The operator, rifle and launcher are generated for this project with OpenAI GPT Image and Tripo 3D. See [`assets-src/models/README.md`](./assets-src/models/README.md) and [`metadata.json`](./metadata.json).
 - The sky is [Kloofendal 48d Partly Cloudy (Pure Sky)](https://polyhaven.com/a/kloofendal_48d_partly_cloudy_puresky) by Greg Zaal, from Poly Haven, CC0. It is downloaded by `npm run setup`.
