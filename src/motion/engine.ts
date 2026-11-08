@@ -60,7 +60,7 @@ export interface LoadProgress {
 const MODEL_CACHE = 'motionbricks-v1';
 
 /** Downloads the ONNX model with progress, caching it with the Cache API for later visits. */
-async function fetchModel(url: string, onProgress: (p: LoadProgress) => void): Promise<Uint8Array> {
+export async function fetchModel(url: string, onProgress: (p: LoadProgress) => void): Promise<Uint8Array> {
   let cache: Cache | undefined;
   try {
     cache = await caches.open(MODEL_CACHE);
@@ -78,18 +78,25 @@ async function fetchModel(url: string, onProgress: (p: LoadProgress) => void): P
   if (!res.ok || !res.body) {
     throw new Error(`Could not download the MotionBricks model (${res.status}). Run \`npm run setup\` first.`);
   }
-  const total = Number(res.headers.get('Content-Length')) || 380_327_058;
-  const bytes = new Uint8Array(total);
+  // Fetch decodes compressed responses; Content-Length then describes wire bytes.
+  const encoding = res.headers.get('Content-Encoding');
+  const total = ((!encoding || encoding === 'identity') ? Number(res.headers.get('Content-Length')) : 0) || 380_327_058;
+  let bytes = new Uint8Array(total);
   let loaded = 0;
   const reader = res.body.getReader();
   for (;;) {
     const { done, value } = await reader.read();
     if (done) break;
+    if (loaded + value.length > bytes.length) {
+      const grown = new Uint8Array(Math.max(bytes.length * 2, loaded + value.length));
+      grown.set(bytes);
+      bytes = grown;
+    }
     bytes.set(value, loaded);
     loaded += value.length;
-    onProgress({ loaded, total });
+    onProgress({ loaded, total: Math.max(total, loaded) });
   }
-  const model = loaded === total ? bytes : bytes.slice(0, loaded);
+  const model = loaded === bytes.length ? bytes : bytes.slice(0, loaded);
   cache?.put(url, new Response(model.slice(), { headers: { 'Content-Type': 'application/octet-stream' } })).catch(() => {});
   return model;
 }
